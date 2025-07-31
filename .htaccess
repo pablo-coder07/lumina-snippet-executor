@@ -1,0 +1,63 @@
+# .htaccess para Render - Lumina Snippet Executor
+
+# Habilitar rewrite engine
+RewriteEngine On
+
+# Configuración de seguridad
+ServerTokens Prod
+Header always unset X-Powered-By
+Header always set X-Frame-Options DENY
+Header always set X-Content-Type-Options nosniff
+
+# CORS para permitir requests desde lumina.market
+Header always set Access-Control-Allow-Origin "https://lumina.market"
+Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS"
+Header always set Access-Control-Allow-Headers "Content-Type, X-API-Key, X-Request-ID"
+
+# Manejar preflight requests
+RewriteCond %{REQUEST_METHOD} OPTIONS
+RewriteRule ^(.*)$ $1 [R=200,L]
+
+# Configuración PHP
+php_value memory_limit 256M
+php_value max_execution_time 300
+php_value upload_max_filesize 10M
+php_value post_max_size 10M
+
+# Proteger directorio snippets
+<Directory "/var/www/html/snippets">
+    Options -Indexes
+    AllowOverride None
+    Require all denied
+</Directory>
+
+# Permitir acceso solo a archivos específicos
+<Files "health.php">
+    Require all granted
+</Files>
+
+<Files "save-snippet.php">
+    Require all granted
+</Files>
+
+<Files "execute-snippet.php">
+    Require all granted
+</Files>
+
+<Files "index.php">
+    Require all granted
+</Files>
+
+# Denegar acceso a otros archivos PHP
+<Files "*.php">
+    Require all denied
+</Files>
+
+# Reglas de rewrite para clean URLs
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^api/(.*)$ /$1.php [L,QSA]
+
+# Logs de errores
+php_flag log_errors on
+php_value error_log /var/www/html/error.log
