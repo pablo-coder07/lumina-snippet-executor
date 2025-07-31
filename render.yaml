@@ -1,0 +1,27 @@
+# render.yaml - Configuración para Render
+services:
+  - type: web
+    name: lumina-snippet-executor
+    env: docker
+    repo: https://github.com/TU_USUARIO/lumina-snippet-executor
+    branch: main
+    dockerfilePath: ./Dockerfile
+    plan: starter # o el plan que hayas elegido
+    region: oregon # o la región más cercana
+    buildCommand: ""
+    startCommand: ""
+    envVars:
+      - key: LUMINA_API_KEY
+        value: "lumina-secure-key-2024"
+      - key: PHP_MEMORY_LIMIT
+        value: "256M"
+      - key: PHP_MAX_EXECUTION_TIME
+        value: "300"
+      - key: ENVIRONMENT
+        value: "production"
+    healthCheckPath: "/health.php"
+    autoDeploy: true
+    disk:
+      name: snippets-storage
+      mountPath: /var/www/html/snippets
+      sizeGB: 1
