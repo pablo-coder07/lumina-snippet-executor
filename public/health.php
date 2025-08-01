@@ -1,6 +1,6 @@
 <?php
 /**
- * Health Check con Debug Completo - Identificar problema del directorio
+ * Health Check Mejorado - Contar archivos en directorio correcto
  */
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: https://lumina.market');
@@ -19,14 +19,17 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 $snippets_dir = __DIR__ . '/snippets/';
+$code_snippets_dir = __DIR__ . '/code_snippets/';  // DIRECTORIO ALTERNATIVO
 
 // DIAGNÓSTICO COMPLETO DEL FILESYSTEM
 $debug_info = [
     'paths' => [
         'current_dir' => __DIR__,
         'snippets_dir' => $snippets_dir,
+        'code_snippets_dir' => $code_snippets_dir,  // AGREGAR DIRECTORIO ALTERNATIVO
         'realpath_current' => realpath(__DIR__),
-        'realpath_snippets' => realpath($snippets_dir)
+        'realpath_snippets' => realpath($snippets_dir),
+        'realpath_code_snippets' => realpath($code_snippets_dir)  // AGREGAR
     ],
     'directory_listing' => [],
     'permissions' => [
@@ -62,19 +65,21 @@ if ($current_files) {
 // VERIFICAR SI EXISTE ALGO LLAMADO 'snippets'
 $snippets_exists_as_file = is_file($snippets_dir);
 $snippets_exists_as_dir = is_dir($snippets_dir);
+$code_snippets_exists_as_dir = is_dir($code_snippets_dir);
 
 $debug_info['snippets_analysis'] = [
     'exists_as_file' => $snippets_exists_as_file,
     'exists_as_dir' => $snippets_exists_as_dir,
     'exists_somehow' => file_exists($snippets_dir),
     'is_link' => is_link($snippets_dir),
-    'stat_info' => @stat($snippets_dir)
+    'stat_info' => @stat($snippets_dir),
+    'code_snippets_exists' => $code_snippets_exists_as_dir  // AGREGAR
 ];
 
 // INTENTAR MÚLTIPLES MÉTODOS DE CREACIÓN
 $creation_methods = [];
 
-// Método 1: mkdir normal
+// Método 1: mkdir normal para snippets
 if (!is_dir($snippets_dir)) {
     $method1_result = @mkdir($snippets_dir, 0777, true);
     $creation_methods['mkdir_normal'] = [
@@ -95,15 +100,14 @@ if (is_file($snippets_dir)) {
     ];
 }
 
-// Método 3: Usar directorio alternativo si el principal falla
-$alt_snippets_dir = __DIR__ . '/code_snippets/';
-if (!is_dir($snippets_dir) && !is_dir($alt_snippets_dir)) {
-    $method3_result = @mkdir($alt_snippets_dir, 0777, true);
-    $creation_methods['alternative_directory'] = [
+// Método 3: Asegurar que code_snippets existe
+if (!is_dir($code_snippets_dir)) {
+    $method3_result = @mkdir($code_snippets_dir, 0777, true);
+    $creation_methods['ensure_code_snippets'] = [
         'attempted' => true,
-        'directory' => $alt_snippets_dir,
+        'directory' => $code_snippets_dir,
         'success' => $method3_result,
-        'exists_after' => is_dir($alt_snippets_dir)
+        'exists_after' => is_dir($code_snippets_dir)
     ];
 }
 
@@ -114,7 +118,7 @@ $test_results = [];
 
 $test_dirs = [
     'snippets' => $snippets_dir,
-    'alternative' => $alt_snippets_dir ?? null,
+    'code_snippets' => $code_snippets_dir,
     'current' => __DIR__ . '/'
 ];
 
@@ -140,6 +144,42 @@ foreach ($test_dirs as $test_name => $test_dir) {
 
 $debug_info['write_tests'] = $test_results;
 
+// CONTAR ARCHIVOS PHP EN AMBOS DIRECTORIOS
+$php_files_count = 0;
+$php_files_list = [];
+
+// Buscar en directorio snippets principal
+if (is_dir($snippets_dir)) {
+    $files = @glob($snippets_dir . '*.php');
+    if ($files) {
+        $php_files_count += count($files);
+        foreach ($files as $file) {
+            $php_files_list[] = [
+                'name' => basename($file),
+                'directory' => 'snippets',
+                'size' => filesize($file),
+                'modified' => date('Y-m-d H:i:s', filemtime($file))
+            ];
+        }
+    }
+}
+
+// BUSCAR EN DIRECTORIO code_snippets (AQUÍ ESTÁN LOS ARCHIVOS)
+if (is_dir($code_snippets_dir)) {
+    $files = @glob($code_snippets_dir . '*.php');
+    if ($files) {
+        $php_files_count += count($files);
+        foreach ($files as $file) {
+            $php_files_list[] = [
+                'name' => basename($file),
+                'directory' => 'code_snippets',  // IDENTIFICAR EL DIRECTORIO
+                'size' => filesize($file),
+                'modified' => date('Y-m-d H:i:s', filemtime($file))
+            ];
+        }
+    }
+}
+
 // USAR EL DIRECTORIO QUE FUNCIONE
 $working_directory = null;
 $working_dir_type = null;
@@ -147,9 +187,9 @@ $working_dir_type = null;
 if (is_dir($snippets_dir) && is_writable($snippets_dir)) {
     $working_directory = $snippets_dir;
     $working_dir_type = 'snippets';
-} elseif (isset($alt_snippets_dir) && is_dir($alt_snippets_dir) && is_writable($alt_snippets_dir)) {
-    $working_directory = $alt_snippets_dir;
-    $working_dir_type = 'alternative';
+} elseif (is_dir($code_snippets_dir) && is_writable($code_snippets_dir)) {
+    $working_directory = $code_snippets_dir;
+    $working_dir_type = 'code_snippets';  // IDENTIFICAR COMO ALTERNATIVO
 } elseif (is_writable(__DIR__)) {
     $working_directory = __DIR__ . '/';
     $working_dir_type = 'current';
@@ -157,7 +197,7 @@ if (is_dir($snippets_dir) && is_writable($snippets_dir)) {
 
 // INFORMACIÓN FINAL DEL SISTEMA
 $health = [
-    'status' => is_dir($snippets_dir) && is_writable($snippets_dir) ? 'healthy' : 'degraded',
+    'status' => $php_files_count > 0 ? 'healthy' : 'degraded',  // CAMBIAR LÓGICA
     'timestamp' => time(),
     'date' => date('Y-m-d H:i:s'),
     'environment' => $_ENV['ENVIRONMENT'] ?? 'production',
@@ -170,27 +210,28 @@ $health = [
     'storage_info' => [
         'snippets_dir' => is_dir($snippets_dir) ? 'exists' : 'missing',
         'snippets_writable' => is_writable($snippets_dir) ? 'yes' : 'no',
-        'snippets_count' => 0,
-        'disk_free_space' => is_dir($snippets_dir) ? disk_free_space($snippets_dir) : 0,
+        'code_snippets_dir' => is_dir($code_snippets_dir) ? 'exists' : 'missing',  // AGREGAR
+        'code_snippets_writable' => is_writable($code_snippets_dir) ? 'yes' : 'no',  // AGREGAR
+        'snippets_count' => $php_files_count,  // CONTAR TOTAL
+        'snippets_by_directory' => [  // DESGLOSE POR DIRECTORIO
+            'snippets' => count(array_filter($php_files_list, function($f) { return $f['directory'] === 'snippets'; })),
+            'code_snippets' => count(array_filter($php_files_list, function($f) { return $f['directory'] === 'code_snippets'; }))
+        ],
+        'disk_free_space' => is_dir($working_directory ?: __DIR__) ? disk_free_space($working_directory ?: __DIR__) : 0,
         'working_directory' => $working_directory,
-        'working_dir_type' => $working_dir_type
+        'working_dir_type' => $working_dir_type,
+        'recent_files' => array_slice($php_files_list, -5)  // ÚLTIMOS 5 DE AMBOS DIRECTORIOS
     ],
     'debug_info' => $debug_info
 ];
 
-// Contar archivos PHP si existe el directorio
-if (is_dir($snippets_dir)) {
-    $php_files = glob($snippets_dir . '*.php');
-    $health['storage_info']['snippets_count'] = count($php_files);
-    $health['storage_info']['recent_files'] = array_slice($php_files, -3);
-}
-
 // LOGGING EXTENSIVO
 error_log("=== HEALTH CHECK DEBUG ===");
 error_log("Snippets dir exists: " . (is_dir($snippets_dir) ? 'YES' : 'NO'));
-error_log("Current dir writable: " . (is_writable(__DIR__) ? 'YES' : 'NO'));
+error_log("Code snippets dir exists: " . (is_dir($code_snippets_dir) ? 'YES' : 'NO'));
+error_log("Total PHP files: " . $php_files_count);
 error_log("Working directory: " . ($working_directory ?: 'NONE'));
-error_log("Creation attempts: " . json_encode($creation_methods));
+error_log("PHP files list: " . json_encode($php_files_list));
 
 // SIEMPRE devolver 200
 http_response_code(200);
