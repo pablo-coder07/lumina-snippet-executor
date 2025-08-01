@@ -16,8 +16,8 @@ WORKDIR /var/www/html
 # Copiar archivos de la aplicación
 COPY public/ /var/www/html/
 
-# Crear directorio snippets con permisos correctos
-RUN mkdir -p /var/www/html/snippets && \
+# LÍNEA CORREGIDA - Crear directorio snippets con manejo de errores
+RUN mkdir -p /var/www/html/snippets || true && \
     chown -R www-data:www-data /var/www/html && \
     chmod -R 755 /var/www/html && \
     chmod 777 /var/www/html/snippets
