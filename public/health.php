@@ -1,20 +1,17 @@
 <?php
 /**
- * Health Check Endpoint Mejorado - Render Version
- * URL: https://lumina-snippet-executor.onrender.com/health.php
+ * Health Check con Debug Completo - Identificar problema del directorio
  */
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: https://lumina.market');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, X-API-Key');
 
-// Manejar preflight OPTIONS
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit;
 }
 
-// Solo permitir GET
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     http_response_code(405);
     echo json_encode(['error' => 'Method not allowed']);
@@ -23,144 +20,180 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 
 $snippets_dir = __DIR__ . '/snippets/';
 
-// INTENTAR CREAR EL DIRECTORIO SI NO EXISTE
-if (!is_dir($snippets_dir)) {
-    $mkdir_result = mkdir($snippets_dir, 0777, true);
-    error_log("Intentando crear directorio snippets: " . ($mkdir_result ? 'ÉXITO' : 'FALLO'));
-    
-    if ($mkdir_result) {
-        chmod($snippets_dir, 0777);
-        error_log("Permisos aplicados al directorio snippets");
-    }
-}
-
-// DIAGNÓSTICO DETALLADO
-$diagnostics = [
-    'directory_checks' => [
-        'snippets_dir_path' => $snippets_dir,
+// DIAGNÓSTICO COMPLETO DEL FILESYSTEM
+$debug_info = [
+    'paths' => [
         'current_dir' => __DIR__,
-        'snippets_exists' => is_dir($snippets_dir),
-        'snippets_readable' => is_readable($snippets_dir),
-        'snippets_writable' => is_writable($snippets_dir),
-        'snippets_permissions' => is_dir($snippets_dir) ? substr(sprintf('%o', fileperms($snippets_dir)), -4) : 'N/A'
+        'snippets_dir' => $snippets_dir,
+        'realpath_current' => realpath(__DIR__),
+        'realpath_snippets' => realpath($snippets_dir)
     ],
-    'file_operations' => [],
+    'directory_listing' => [],
+    'permissions' => [
+        'current_dir_readable' => is_readable(__DIR__),
+        'current_dir_writable' => is_writable(__DIR__),
+        'current_dir_permissions' => substr(sprintf('%o', fileperms(__DIR__)), -4)
+    ],
+    'creation_attempts' => [],
     'environment' => [
-        'php_user' => get_current_user(),
-        'php_uid' => getmyuid(),
-        'php_gid' => getmygid(),
-        'working_dir' => getcwd(),
-        'temp_dir' => sys_get_temp_dir()
+        'user' => get_current_user(),
+        'uid' => getmyuid(),
+        'gid' => getmygid(),
+        'umask' => sprintf('%04o', umask())
     ]
 ];
 
-// INTENTAR ESCRIBIR UN ARCHIVO DE PRUEBA
-$test_file = $snippets_dir . 'health_test_' . time() . '.txt';
-$write_test = @file_put_contents($test_file, 'Health check test at ' . date('Y-m-d H:i:s'));
-
-$diagnostics['file_operations'] = [
-    'test_file_path' => $test_file,
-    'write_attempt' => $write_test !== false,
-    'write_bytes' => $write_test ?: 0,
-    'test_file_exists' => file_exists($test_file)
-];
-
-// Limpiar archivo de prueba
-if (file_exists($test_file)) {
-    @unlink($test_file);
-}
-
-// CONTAR ARCHIVOS PHP EXISTENTES
-$php_files_count = 0;
-$php_files_list = [];
-if (is_dir($snippets_dir)) {
-    $files = @scandir($snippets_dir);
-    if ($files) {
-        foreach ($files as $file) {
-            if (pathinfo($file, PATHINFO_EXTENSION) === 'php') {
-                $php_files_count++;
-                $php_files_list[] = [
-                    'name' => $file,
-                    'size' => filesize($snippets_dir . $file),
-                    'modified' => date('Y-m-d H:i:s', filemtime($snippets_dir . $file))
-                ];
-            }
+// LISTAR CONTENIDO DEL DIRECTORIO ACTUAL
+$current_files = @scandir(__DIR__);
+if ($current_files) {
+    foreach ($current_files as $file) {
+        if ($file !== '.' && $file !== '..') {
+            $filepath = __DIR__ . '/' . $file;
+            $debug_info['directory_listing'][] = [
+                'name' => $file,
+                'type' => is_dir($filepath) ? 'directory' : 'file',
+                'permissions' => substr(sprintf('%o', fileperms($filepath)), -4),
+                'size' => is_file($filepath) ? filesize($filepath) : 0
+            ];
         }
     }
 }
 
-// INFORMACIÓN PRINCIPAL DEL SISTEMA
+// VERIFICAR SI EXISTE ALGO LLAMADO 'snippets'
+$snippets_exists_as_file = is_file($snippets_dir);
+$snippets_exists_as_dir = is_dir($snippets_dir);
+
+$debug_info['snippets_analysis'] = [
+    'exists_as_file' => $snippets_exists_as_file,
+    'exists_as_dir' => $snippets_exists_as_dir,
+    'exists_somehow' => file_exists($snippets_dir),
+    'is_link' => is_link($snippets_dir),
+    'stat_info' => @stat($snippets_dir)
+];
+
+// INTENTAR MÚLTIPLES MÉTODOS DE CREACIÓN
+$creation_methods = [];
+
+// Método 1: mkdir normal
+if (!is_dir($snippets_dir)) {
+    $method1_result = @mkdir($snippets_dir, 0777, true);
+    $creation_methods['mkdir_normal'] = [
+        'attempted' => true,
+        'success' => $method1_result,
+        'exists_after' => is_dir($snippets_dir)
+    ];
+}
+
+// Método 2: Eliminar y recrear si existe como archivo
+if (is_file($snippets_dir)) {
+    $unlink_result = @unlink($snippets_dir);
+    $method2_mkdir = @mkdir($snippets_dir, 0777, true);
+    $creation_methods['unlink_and_mkdir'] = [
+        'unlink_success' => $unlink_result,
+        'mkdir_success' => $method2_mkdir,
+        'exists_after' => is_dir($snippets_dir)
+    ];
+}
+
+// Método 3: Usar directorio alternativo si el principal falla
+$alt_snippets_dir = __DIR__ . '/code_snippets/';
+if (!is_dir($snippets_dir) && !is_dir($alt_snippets_dir)) {
+    $method3_result = @mkdir($alt_snippets_dir, 0777, true);
+    $creation_methods['alternative_directory'] = [
+        'attempted' => true,
+        'directory' => $alt_snippets_dir,
+        'success' => $method3_result,
+        'exists_after' => is_dir($alt_snippets_dir)
+    ];
+}
+
+$debug_info['creation_attempts'] = $creation_methods;
+
+// INTENTAR ESCRIBIR ARCHIVO DE PRUEBA
+$test_results = [];
+
+$test_dirs = [
+    'snippets' => $snippets_dir,
+    'alternative' => $alt_snippets_dir ?? null,
+    'current' => __DIR__ . '/'
+];
+
+foreach ($test_dirs as $test_name => $test_dir) {
+    if ($test_dir && is_dir($test_dir)) {
+        $test_file = $test_dir . 'test_' . time() . '.txt';
+        $write_result = @file_put_contents($test_file, 'test content');
+        
+        $test_results[$test_name] = [
+            'directory' => $test_dir,
+            'test_file' => $test_file,
+            'write_success' => $write_result !== false,
+            'bytes_written' => $write_result ?: 0,
+            'file_exists_after' => file_exists($test_file)
+        ];
+        
+        // Limpiar archivo de prueba
+        if (file_exists($test_file)) {
+            @unlink($test_file);
+        }
+    }
+}
+
+$debug_info['write_tests'] = $test_results;
+
+// USAR EL DIRECTORIO QUE FUNCIONE
+$working_directory = null;
+$working_dir_type = null;
+
+if (is_dir($snippets_dir) && is_writable($snippets_dir)) {
+    $working_directory = $snippets_dir;
+    $working_dir_type = 'snippets';
+} elseif (isset($alt_snippets_dir) && is_dir($alt_snippets_dir) && is_writable($alt_snippets_dir)) {
+    $working_directory = $alt_snippets_dir;
+    $working_dir_type = 'alternative';
+} elseif (is_writable(__DIR__)) {
+    $working_directory = __DIR__ . '/';
+    $working_dir_type = 'current';
+}
+
+// INFORMACIÓN FINAL DEL SISTEMA
 $health = [
-    'status' => 'healthy',
+    'status' => is_dir($snippets_dir) && is_writable($snippets_dir) ? 'healthy' : 'degraded',
     'timestamp' => time(),
     'date' => date('Y-m-d H:i:s'),
-    'timezone' => date_default_timezone_get(),
     'environment' => $_ENV['ENVIRONMENT'] ?? 'production',
     'server_info' => [
         'php_version' => PHP_VERSION,
         'memory_usage' => memory_get_usage(true),
         'memory_limit' => ini_get('memory_limit'),
-        'max_execution_time' => ini_get('max_execution_time'),
         'server_software' => $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown'
     ],
     'storage_info' => [
         'snippets_dir' => is_dir($snippets_dir) ? 'exists' : 'missing',
         'snippets_writable' => is_writable($snippets_dir) ? 'yes' : 'no',
-        'snippets_count' => $php_files_count,
+        'snippets_count' => 0,
         'disk_free_space' => is_dir($snippets_dir) ? disk_free_space($snippets_dir) : 0,
-        'recent_files' => array_slice($php_files_list, -3) // Últimos 3 archivos
+        'working_directory' => $working_directory,
+        'working_dir_type' => $working_dir_type
     ],
-    'api_info' => [
-        'endpoints' => [
-            'health' => '/health.php',
-            'save' => '/save-snippet.php',
-            'execute' => '/execute-snippet.php'
-        ],
-        'version' => '1.0.1',
-        'last_deploy' => file_exists(__DIR__ . '/.deploy-timestamp') ? file_get_contents(__DIR__ . '/.deploy-timestamp') : 'unknown'
-    ],
-    'security' => [
-        'api_key_required' => true,
-        'cors_enabled' => true,
-        'https_only' => isset($_SERVER['HTTPS']) || $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https'
-    ],
-    'diagnostics' => $diagnostics
+    'debug_info' => $debug_info
 ];
 
-// VERIFICAR ESTADO CRÍTICO
-$critical_issues = [];
-
-if (!is_dir($snippets_dir)) {
-    $critical_issues[] = 'snippets_directory_missing';
+// Contar archivos PHP si existe el directorio
+if (is_dir($snippets_dir)) {
+    $php_files = glob($snippets_dir . '*.php');
+    $health['storage_info']['snippets_count'] = count($php_files);
+    $health['storage_info']['recent_files'] = array_slice($php_files, -3);
 }
 
-if (!is_writable($snippets_dir)) {
-    $critical_issues[] = 'snippets_directory_not_writable';
-}
-
-if (!$diagnostics['file_operations']['write_attempt']) {
-    $critical_issues[] = 'file_write_test_failed';
-}
-
-// DETERMINAR ESTADO GENERAL
-if (empty($critical_issues)) {
-    $health['status'] = 'healthy';
-} else {
-    $health['status'] = 'degraded';
-    $health['critical_issues'] = $critical_issues;
-}
-
-// LOGGING PARA DEBUGGING
-error_log("=== HEALTH CHECK RESULTS ===");
-error_log("Status: " . $health['status']);
+// LOGGING EXTENSIVO
+error_log("=== HEALTH CHECK DEBUG ===");
 error_log("Snippets dir exists: " . (is_dir($snippets_dir) ? 'YES' : 'NO'));
-error_log("Snippets writable: " . (is_writable($snippets_dir) ? 'YES' : 'NO'));
-error_log("PHP files count: " . $php_files_count);
-error_log("Critical issues: " . implode(', ', $critical_issues));
+error_log("Current dir writable: " . (is_writable(__DIR__) ? 'YES' : 'NO'));
+error_log("Working directory: " . ($working_directory ?: 'NONE'));
+error_log("Creation attempts: " . json_encode($creation_methods));
 
-// SIEMPRE devolver 200 para que pase health check de Render
+// SIEMPRE devolver 200
 http_response_code(200);
 
-// Respuesta JSON
 echo json_encode($health, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 ?>
