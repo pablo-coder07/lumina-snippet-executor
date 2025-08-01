@@ -1,4 +1,4 @@
-# Dockerfile Corregido - Asegurar creación del directorio snippets
+# Dockerfile Simple - Sin pre-crear directorio
 FROM php:8.2-apache
 
 # Instalar extensiones PHP necesarias
@@ -20,20 +20,9 @@ COPY public/ /var/www/html/
 # Copiar .htaccess
 COPY .htaccess /var/www/html/.htaccess
 
-# CREAR DIRECTORIO SNIPPETS CON PERMISOS CORRECTOS
-RUN mkdir -p /var/www/html/snippets && \
-    chown -R www-data:www-data /var/www/html && \
-    chmod -R 755 /var/www/html && \
-    chmod -R 777 /var/www/html/snippets && \
-    echo "Directorio snippets creado correctamente"
-
-# VERIFICAR QUE EL DIRECTORIO EXISTE
-RUN ls -la /var/www/html/ && \
-    ls -la /var/www/html/snippets/ || echo "Error: snippets no existe"
-
-# CREAR ARCHIVO DE PRUEBA PARA VERIFICAR ESCRITURA
-RUN echo "<?php echo 'Test file'; ?>" > /var/www/html/snippets/test.php && \
-    chmod 777 /var/www/html/snippets/test.php
+# Dar permisos generales (el directorio snippets se creará automáticamente)
+RUN chown -R www-data:www-data /var/www/html && \
+    chmod -R 755 /var/www/html
 
 # Exponer puerto
 EXPOSE 80
