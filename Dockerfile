@@ -1,33 +1,33 @@
-# Dockerfile para Render - Lumina Snippet Executor
+# Dockerfile Final - Funcional para Render
 FROM php:8.2-apache
 
 # Instalar extensiones PHP necesarias
 RUN docker-php-ext-install mysqli pdo pdo_mysql
 
-# Habilitar mod_rewrite de Apache
+# Habilitar módulos Apache necesarios
 RUN a2enmod rewrite
+RUN a2enmod headers
 
-# Configurar Apache para Render
+# Configurar Apache básico
 RUN echo 'ServerName localhost' >> /etc/apache2/apache2.conf
 
-# Crear directorio de trabajo
+# Directorio de trabajo
 WORKDIR /var/www/html
 
-# Copiar archivos de la aplicación
+# Copiar archivos PHP
 COPY public/ /var/www/html/
 
-# LÍNEA CORREGIDA - Crear directorio snippets con manejo de errores
-RUN mkdir -p /var/www/html/snippets || true && \
+# Copiar .htaccess (ahora funcionará)
+COPY .htaccess /var/www/html/.htaccess
+
+# Crear directorio snippets y permisos
+RUN mkdir -p /var/www/html/snippets && \
     chown -R www-data:www-data /var/www/html && \
     chmod -R 755 /var/www/html && \
     chmod 777 /var/www/html/snippets
 
-# Configurar Apache para producción
-COPY .htaccess /var/www/html/.htaccess
-RUN chown www-data:www-data /var/www/html/.htaccess
-
-# Exponer puerto para Render
+# Exponer puerto
 EXPOSE 80
 
-# Comando de inicio
+# Iniciar Apache
 CMD ["apache2-foreground"]
