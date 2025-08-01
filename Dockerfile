@@ -21,7 +21,7 @@ COPY public/ /var/www/html/
 COPY .htaccess /var/www/html/.htaccess
 
 # Crear directorio snippets y permisos
-RUN mkdir -p /var/www/html/snippets && \
+RUN mkdir -p /var/www/html/snippets || true && \
     chown -R www-data:www-data /var/www/html && \
     chmod -R 755 /var/www/html && \
     chmod 777 /var/www/html/snippets
