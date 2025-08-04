@@ -1,9 +1,5 @@
 <?php
-// execute-snippet.php MODIFICADO - Buscar en carpetas por usuario
-error_reporting(E_ALL);
-ini_set('display_errors', 0);
-ini_set('log_errors', 1);
-
+// save-snippet.php REVERTIDO - Guardar directamente en snippets/ (sin subcarpetas)
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
@@ -20,250 +16,137 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-error_log("Execute snippet request (organized) received at " . date('Y-m-d H:i:s'));
+// Verificar API key
+$api_key = $_SERVER['HTTP_X_API_KEY'] ?? '';
+if ($api_key !== 'lumina-secure-key-2024') {
+    http_response_code(401);
+    echo json_encode(['error' => 'Unauthorized']);
+    exit;
+}
 
+error_log("=== SAVE SNIPPET REQUEST (SIMPLE) ===");
+error_log("Timestamp: " . date('Y-m-d H:i:s'));
+
+// Obtener datos del request
 $input = json_decode(file_get_contents('php://input'), true);
-$shortcode_name = $input['shortcode'] ?? '';
-$user_id = $input['user_id'] ?? 1; // ID del usuario desde WordPress
 
-if (empty($shortcode_name)) {
+if (!$input || !isset($input['shortcode']) || !isset($input['code'])) {
+    error_log("ERROR: Missing required fields");
     http_response_code(400);
-    echo json_encode(['error' => 'Shortcode name required']);
+    echo json_encode(['error' => 'Missing required fields: shortcode and code']);
     exit;
 }
 
-error_log("Looking for shortcode: " . $shortcode_name . " (User: " . $user_id . ")");
+$shortcode = preg_replace('/[^a-zA-Z0-9_-]/', '', $input['shortcode']);
+$code = base64_decode($input['code']);
+$user_id = $input['user_id'] ?? 1; // Para logs, pero no afecta la ubicación
 
-// BUSCAR EN CARPETAS ORGANIZADAS POR USUARIO
-$base_snippets_dir = __DIR__ . '/snippets/';
-$user_folder = 'usuario_' . $user_id;
-$user_dir = $base_snippets_dir . $user_folder . '/';
+if (empty($code)) {
+    error_log("ERROR: Invalid base64 code");
+    http_response_code(400);
+    echo json_encode(['error' => 'Invalid base64 code']);
+    exit;
+}
 
-error_log("Searching in user directory: " . $user_dir);
+error_log("Processing shortcode: " . $shortcode);
+error_log("Code length: " . strlen($code) . " bytes");
+error_log("User ID (for reference): " . $user_id);
 
-// Verificar que el directorio base existe
-if (!is_dir($base_snippets_dir)) {
-    error_log("CRITICAL: Base snippets directory does not exist: " . $base_snippets_dir);
+// USAR DIRECTORIO SIMPLE - TODOS LOS ARCHIVOS EN snippets/
+$snippets_dir = __DIR__ . '/snippets/';
+
+error_log("Target directory: " . $snippets_dir);
+
+// Verificar que el directorio existe y es escribible
+if (!is_dir($snippets_dir)) {
+    error_log("ERROR: Snippets directory does not exist");
     http_response_code(500);
     echo json_encode([
-        'error' => 'Base snippets directory not found',
-        'directory' => $base_snippets_dir
-    ]);
-    exit;
-}
-
-// Verificar que el directorio del usuario existe
-if (!is_dir($user_dir)) {
-    error_log("User directory does not exist: " . $user_dir);
-    
-    // Buscar en todas las carpetas de usuarios como fallback
-    error_log("Searching in all user directories...");
-    $all_user_dirs = glob($base_snippets_dir . 'usuario_*', GLOB_ONLYDIR);
-    
-    if (empty($all_user_dirs)) {
-        http_response_code(404);
-        echo json_encode([
-            'error' => 'No user directories found',
-            'base_directory' => $base_snippets_dir,
-            'expected_user_dir' => $user_dir,
-            'user_id' => $user_id
-        ]);
-        exit;
-    }
-    
-    // Buscar el shortcode en todas las carpetas de usuarios
-    $found_in_dirs = [];
-    foreach ($all_user_dirs as $dir) {
-        $files = glob($dir . '/*.php');
-        foreach ($files as $file) {
-            $filename = basename($file, '.php');
-            if (strpos($filename, $shortcode_name) === 0) {
-                $found_in_dirs[] = [
-                    'directory' => basename($dir),
-                    'file' => basename($file),
-                    'full_path' => $file
-                ];
-            }
-        }
-    }
-    
-    if (!empty($found_in_dirs)) {
-        // Usar el primer archivo encontrado
-        $snippet_file = $found_in_dirs[0]['full_path'];
-        $used_directory = $found_in_dirs[0]['directory'];
-        error_log("Found shortcode in different user directory: " . $used_directory);
-    } else {
-        http_response_code(404);
-        echo json_encode([
-            'error' => 'Shortcode not found in any user directory',
-            'shortcode' => $shortcode_name,
-            'searched_directories' => array_map('basename', $all_user_dirs),
-            'user_id' => $user_id
-        ]);
-        exit;
-    }
-} else {
-    // Buscar en el directorio específico del usuario
-    $snippet_file = null;
-    $latest_timestamp = 0;
-    
-    $files = @scandir($user_dir);
-    if (!$files) {
-        error_log("Cannot read user directory: " . $user_dir);
-        http_response_code(500);
-        echo json_encode(['error' => 'Cannot read user directory']);
-        exit;
-    }
-    
-    foreach ($files as $file) {
-        if (pathinfo($file, PATHINFO_EXTENSION) === 'php') {
-            // Buscar archivos que coincidan con el shortcode
-            $patterns = [
-                '/^' . preg_quote($shortcode_name, '/') . '_(\d+)\.php$/',
-                '/^' . preg_quote($shortcode_name, '/') . '_v\d+_(\d+)\.php$/'
-            ];
-            
-            foreach ($patterns as $pattern) {
-                if (preg_match($pattern, $file, $matches)) {
-                    $file_timestamp = intval($matches[1]);
-                    if ($file_timestamp > $latest_timestamp) {
-                        $latest_timestamp = $file_timestamp;
-                        $snippet_file = $user_dir . $file;
-                    }
-                    error_log("Found candidate file: " . $file . " (timestamp: " . $file_timestamp . ")");
-                    break;
-                }
-            }
-        }
-    }
-    
-    $used_directory = $user_folder;
-}
-
-if (!$snippet_file || !file_exists($snippet_file)) {
-    error_log("Snippet file not found for: " . $shortcode_name);
-    
-    // Listar archivos disponibles para debug
-    $available_files = [];
-    if (is_dir($user_dir)) {
-        $files = glob($user_dir . '*.php');
-        $available_files = array_map('basename', $files);
-    }
-    
-    http_response_code(404);
-    echo json_encode([
-        'error' => 'Snippet not found',
-        'shortcode' => $shortcode_name,
-        'user_id' => $user_id,
-        'searched_in' => $user_dir,
-        'available_files' => $available_files
+        'error' => 'Snippets directory not found',
+        'directory' => $snippets_dir,
+        'suggestion' => 'Run fix-snippets-directory.php first'
     ]);
     exit;
 }
 
-error_log("Executing snippet file: " . basename($snippet_file));
-error_log("From directory: " . $used_directory);
-
-// EJECUCIÓN (igual que antes pero con info de organización)
-ob_start();
-$start_time = microtime(true);
-$execution_error = '';
-
-try {
-    register_shutdown_function(function() use (&$execution_error) {
-        $error = error_get_last();
-        if ($error !== null && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
-            $execution_error = "Fatal Error: " . $error['message'] . " in " . $error['file'] . " on line " . $error['line'];
-        }
-    });
-    
-    include $snippet_file;
-    
-    $output = ob_get_clean();
-    $execution_time = round((microtime(true) - $start_time) * 1000, 2);
-    
-    if (!empty($execution_error)) {
-        throw new Exception($execution_error);
-    }
-    
-    error_log("Snippet executed successfully in " . $execution_time . "ms");
-    
-    $html = $output;
-    $css = '';
-    $js = '';
-    
-    // Extraer CSS
-    if (preg_match_all('/<style[^>]*>(.*?)<\/style>/is', $output, $css_matches)) {
-        $css = implode("\n", $css_matches[1]);
-        $html = preg_replace('/<style[^>]*>.*?<\/style>/is', '', $html);
-    }
-    
-    // Extraer JavaScript
-    if (preg_match_all('/<script[^>]*>(.*?)<\/script>/is', $html, $js_matches)) {
-        $js = implode("\n", $js_matches[1]);
-        $html = preg_replace('/<script[^>]*>.*?<\/script>/is', '', $html);
-    }
-    
-    // RESPUESTA CON INFORMACIÓN DE ORGANIZACIÓN
-    $response = [
-        'success' => true,
-        'html' => trim($html),
-        'css' => trim($css),
-        'js' => trim($js),
-        'execution_time' => $execution_time,
-        'file_used' => basename($snippet_file),
-        'user_directory' => $used_directory,
-        'user_id' => $user_id,
-        'organization' => 'user_folders',
-        'timestamp' => time()
-    ];
-    
-    while (ob_get_level()) {
-        ob_end_clean();
-    }
-    
-    echo json_encode($response);
-    
-} catch (ParseError $e) {
-    ob_end_clean();
-    $execution_error = "Parse Error: " . $e->getMessage() . " in line " . $e->getLine();
-    error_log("Snippet parse error: " . $execution_error);
-    
+if (!is_writable($snippets_dir)) {
+    error_log("ERROR: Snippets directory is not writable");
     http_response_code(500);
     echo json_encode([
-        'success' => false,
-        'error' => $execution_error,
-        'file_used' => basename($snippet_file),
-        'user_directory' => $used_directory,
-        'error_type' => 'parse_error'
+        'error' => 'Snippets directory is not writable',
+        'directory' => $snippets_dir,
+        'permissions' => substr(sprintf('%o', fileperms($snippets_dir)), -4)
     ]);
-    
-} catch (Error $e) {
-    ob_end_clean();
-    $execution_error = "Fatal Error: " . $e->getMessage() . " in line " . $e->getLine();
-    error_log("Snippet fatal error: " . $execution_error);
-    
-    http_response_code(500);
-    echo json_encode([
-        'success' => false,
-        'error' => $execution_error,
-        'file_used' => basename($snippet_file),
-        'user_directory' => $used_directory,
-        'error_type' => 'fatal_error'
-    ]);
-    
-} catch (Exception $e) {
-    ob_end_clean();
-    $execution_error = "Exception: " . $e->getMessage();
-    error_log("Snippet exception: " . $execution_error);
-    
-    http_response_code(500);
-    echo json_encode([
-        'success' => false,
-        'error' => $execution_error,
-        'file_used' => basename($snippet_file),
-        'user_directory' => $used_directory,
-        'error_type' => 'exception'
-    ]);
+    exit;
 }
+
+// Generar nombre de archivo simple
+$timestamp = time();
+$filename = $shortcode . '_' . $timestamp . '.php';
+$filepath = $snippets_dir . $filename;
+
+error_log("Target filepath: " . $filepath);
+
+// Asegurar que el código comience con <?php
+if (!str_starts_with(trim($code), '<?php')) {
+    $code = "<?php\n" . $code;
+}
+
+// Agregar metadatos como comentario (opcional)
+$metadata_comment = "<?php\n";
+$metadata_comment .= "/*\n";
+$metadata_comment .= " * Código generado por DrawCode AI\n";
+$metadata_comment .= " * Shortcode: [{$shortcode}]\n";
+$metadata_comment .= " * Fecha: " . date('Y-m-d H:i:s') . "\n";
+$metadata_comment .= " * Timestamp: {$timestamp}\n";
+$metadata_comment .= " */\n\n";
+
+// Remover el <?php del código original y agregar nuestros metadatos
+$code = $metadata_comment . ltrim($code, "<?php \n");
+
+// Guardar el archivo
+$write_result = file_put_contents($filepath, $code);
+
+if ($write_result === false) {
+    error_log("ERROR: Failed to write file: " . $filepath);
+    http_response_code(500);
+    echo json_encode([
+        'error' => 'Failed to save file',
+        'filepath' => $filepath,
+        'directory' => $snippets_dir
+    ]);
+    exit;
+}
+
+// Verificar que el archivo se guardó
+if (!file_exists($filepath)) {
+    error_log("ERROR: File was not created: " . $filepath);
+    http_response_code(500);
+    echo json_encode(['error' => 'File creation verification failed']);
+    exit;
+}
+
+// Contar archivos totales
+$total_files = count(glob($snippets_dir . '*.php'));
+$file_size = filesize($filepath);
+
+error_log("SUCCESS: File saved successfully");
+error_log("Filename: " . $filename);
+error_log("File size: " . $file_size . " bytes");
+error_log("Total PHP files: " . $total_files);
+
+// Respuesta exitosa simple
+echo json_encode([
+    'success' => true,
+    'filename' => $filename,
+    'filepath' => $filepath,
+    'shortcode' => $shortcode,
+    'timestamp' => $timestamp,
+    'size' => strlen($code),
+    'file_size' => $file_size,
+    'total_snippets' => $total_files,
+    'saved_at' => date('Y-m-d H:i:s', $timestamp),
+    'working_directory' => $snippets_dir,
+    'organization' => 'simple'
+]);
 ?>
