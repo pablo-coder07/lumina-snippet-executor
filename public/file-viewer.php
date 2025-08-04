@@ -101,6 +101,9 @@ if ($view_file) {
                 <button class="btn btn-success" onclick="testExecution('<?php echo htmlspecialchars($shortcode_name); ?>')">
                     ▶️ Probar shortcode
                 </button>
+                <button class="btn" onclick="copyToClipboard()" id="copyBtn">
+                    📋 Copiar código
+                </button>
             </div>
             
             <div class="file-info">
@@ -110,10 +113,26 @@ if ($view_file) {
                 <strong>🕒 Modificado:</strong> <?php echo $modified; ?>
             </div>
             
-            <div class="file-content"><?php echo htmlspecialchars($content); ?></div>
+            <div class="file-content" id="fileContent"><?php echo htmlspecialchars($content); ?></div>
         </div>
         
         <script>
+        function copyToClipboard() {
+            const content = document.getElementById('fileContent').textContent;
+            navigator.clipboard.writeText(content).then(function() {
+                const btn = document.getElementById('copyBtn');
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '✅ Copiado!';
+                btn.style.background = '#10b981';
+                setTimeout(function() {
+                    btn.innerHTML = originalText;
+                    btn.style.background = '#3b82f6';
+                }, 2000);
+            }).catch(function(err) {
+                alert('Error al copiar: ' + err);
+            });
+        }
+        
         function testExecution(shortcode) {
             const payload = {
                 shortcode: shortcode,
@@ -232,7 +251,7 @@ if ($view_file) {
             padding: 15px 20px;
             font-weight: 600;
             display: grid;
-            grid-template-columns: 1fr auto auto auto;
+            grid-template-columns: 1fr auto auto;
             gap: 20px;
             align-items: center;
         }
@@ -240,7 +259,7 @@ if ($view_file) {
             padding: 12px 20px;
             border-bottom: 1px solid #e2e8f0;
             display: grid;
-            grid-template-columns: 1fr auto auto auto;
+            grid-template-columns: 1fr auto auto;
             gap: 20px;
             align-items: center;
             transition: background-color 0.2s ease;
@@ -358,7 +377,6 @@ if ($view_file) {
     <div class="file-list">
         <div class="file-list-header">
             <div>📄 Nombre del archivo</div>
-            <div>🏷️ Shortcode</div>
             <div>💾 Tamaño</div>
             <div>🕒 Modificado</div>
         </div>
@@ -385,9 +403,6 @@ if ($view_file) {
                 <div class="file-name" onclick="location.href='?file=<?php echo urlencode($filename); ?>'">
                     <?php echo htmlspecialchars($filename); ?>
                 </div>
-                <div class="file-shortcode">
-                    [<?php echo htmlspecialchars($shortcode_name); ?>]
-                </div>
                 <div class="file-size">
                     <?php echo number_format($size / 1024, 1); ?> KB
                 </div>
@@ -398,10 +413,6 @@ if ($view_file) {
             
         <?php endforeach; ?>
     </div>
-    
-    <p style="text-align: center; margin-top: 20px; color: #64748b; font-size: 14px;">
-        💡 <strong>Tip:</strong> Haz clic en cualquier nombre de archivo para ver su código completo
-    </p>
 </div>
 
 </body>
