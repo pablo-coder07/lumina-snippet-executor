@@ -1,5 +1,5 @@
 <?php
-// file-viewer.php - Lista de archivos con vista separada
+// file-viewer.php - Lista de archivos con vista separada Y BACKUP
 $view_file = $_GET['file'] ?? null;
 
 // Si se solicita ver un archivo específico, mostrar solo ese archivo
@@ -84,6 +84,8 @@ if ($view_file) {
             .btn-back { background: #6b7280; }
             .btn-success { background: #10b981; }
             .btn-success:hover { background: #059669; }
+            .btn-warning { background: #f59e0b; }
+            .btn-warning:hover { background: #d97706; }
             .actions {
                 margin-bottom: 20px;
             }
@@ -104,6 +106,9 @@ if ($view_file) {
                 <button class="btn" onclick="copyToClipboard()" id="copyBtn">
                     📋 Copiar código
                 </button>
+                <a href="backup-restore.php?action=backup" class="btn btn-warning">
+                    💾 Backup Ahora
+                </a>
             </div>
             
             <div class="file-info">
@@ -156,10 +161,20 @@ if ($view_file) {
                 try {
                     const data = JSON.parse(text);
                     if (data.success) {
-                        alert('✅ Ejecución exitosa!\n\n' +
-                              'Archivo: ' + data.file_used + '\n' +
-                              'Tiempo: ' + data.execution_time + 'ms\n\n' +
-                              'HTML: ' + data.html.substring(0, 150) + '...');
+                        if (data.html && data.html.length > 0) {
+                            alert('✅ Ejecución exitosa!\n\n' +
+                                  'Archivo: ' + data.file_used + '\n' +
+                                  'Tiempo: ' + data.execution_time + 'ms\n' +
+                                  'HTML generado: ' + data.html.length + ' caracteres\n\n' +
+                                  'Vista previa:\n' + data.html.substring(0, 200) + '...');
+                        } else {
+                            alert('⚠️ Ejecución exitosa pero sin contenido HTML!\n\n' +
+                                  'Archivo: ' + data.file_used + '\n' +
+                                  'Tiempo: ' + data.execution_time + 'ms\n' +
+                                  'HTML length: ' + (data.html ? data.html.length : 0) + '\n' +
+                                  'CSS length: ' + (data.css ? data.css.length : 0) + '\n' +
+                                  'JS length: ' + (data.js ? data.js.length : 0));
+                        }
                     } else {
                         alert('❌ Error en ejecución:\n' + data.error);
                     }
@@ -224,6 +239,28 @@ if ($view_file) {
             border-radius: 6px;
             margin-bottom: 20px;
         }
+        
+        /* NUEVA SECCIÓN DE BACKUP */
+        .backup-section {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border: 2px solid #0ea5e9;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .backup-section h3 {
+            color: #0c4a6e;
+            margin: 0 0 15px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .backup-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
         .btn {
             background: #3b82f6;
             color: white;
@@ -234,10 +271,18 @@ if ($view_file) {
             display: inline-block;
             margin-right: 10px;
             font-size: 14px;
+            transition: all 0.2s ease;
         }
-        .btn:hover { background: #2563eb; }
+        .btn:hover { 
+            background: #2563eb; 
+            transform: translateY(-1px);
+        }
         .btn-success { background: #10b981; }
         .btn-success:hover { background: #059669; }
+        .btn-warning { background: #f59e0b; }
+        .btn-warning:hover { background: #d97706; }
+        .btn-danger { background: #ef4444; }
+        .btn-danger:hover { background: #dc2626; }
         
         .file-list {
             background: #f8fafc;
@@ -251,7 +296,7 @@ if ($view_file) {
             padding: 15px 20px;
             font-weight: 600;
             display: grid;
-            grid-template-columns: 1fr auto auto;
+            grid-template-columns: 1fr auto auto auto;
             gap: 20px;
             align-items: center;
         }
@@ -259,7 +304,7 @@ if ($view_file) {
             padding: 12px 20px;
             border-bottom: 1px solid #e2e8f0;
             display: grid;
-            grid-template-columns: 1fr auto auto;
+            grid-template-columns: 1fr auto auto auto;
             gap: 20px;
             align-items: center;
             transition: background-color 0.2s ease;
@@ -314,6 +359,26 @@ if ($view_file) {
         <small>🕒 Actualizado: <?php echo date('Y-m-d H:i:s'); ?></small>
     </div>
 
+    <!-- NUEVA SECCIÓN DE BACKUP -->
+    <div class="backup-section">
+        <h3>💾 Sistema de Backup y Restauración</h3>
+        <p style="margin: 0 0 15px 0; color: #0c4a6e;">Protege tus archivos antes de hacer redeploy en Render</p>
+        <div class="backup-actions">
+            <a href="backup-restore.php?action=backup" class="btn btn-warning" onclick="return confirm('¿Crear backup de todos los archivos actuales?')">
+                💾 Crear Backup Completo
+            </a>
+            <a href="backup-restore.php?action=restore" class="btn btn-success" onclick="return confirm('¿Restaurar archivos desde el backup? Esto sobrescribirá archivos existentes.')">
+                🔄 Restaurar desde Backup
+            </a>
+            <a href="backup-restore.php?action=status" class="btn btn-primary">
+                📊 Estado del Backup
+            </a>
+        </div>
+        <small style="color: #0369a1; font-style: italic;">
+            💡 Tip: Haz backup antes de cada redeploy para no perder tus códigos generados
+        </small>
+    </div>
+
     <div class="actions">
         <strong>🔗 Enlaces útiles:</strong>
         <a href="health.php" class="btn">📊 Health Check</a>
@@ -339,6 +404,7 @@ if ($view_file) {
         echo '<div class="no-files">
             <h3>📁 No hay archivos PHP en snippets</h3>
             <p>Los archivos aparecerán aquí cuando generes código desde WordPress</p>
+            <p><strong>Si acabas de hacer redeploy:</strong> Usa "🔄 Restaurar desde Backup" para recuperar tus archivos</p>
         </div>';
         exit;
     }
@@ -377,6 +443,7 @@ if ($view_file) {
     <div class="file-list">
         <div class="file-list-header">
             <div>📄 Nombre del archivo</div>
+            <div>🏷️ Shortcode</div>
             <div>💾 Tamaño</div>
             <div>🕒 Modificado</div>
         </div>
@@ -403,6 +470,9 @@ if ($view_file) {
                 <div class="file-name" onclick="location.href='?file=<?php echo urlencode($filename); ?>'">
                     <?php echo htmlspecialchars($filename); ?>
                 </div>
+                <div class="file-shortcode">
+                    [<?php echo htmlspecialchars($shortcode_name); ?>]
+                </div>
                 <div class="file-size">
                     <?php echo number_format($size / 1024, 1); ?> KB
                 </div>
@@ -414,6 +484,13 @@ if ($view_file) {
         <?php endforeach; ?>
     </div>
 </div>
+
+<script>
+// Auto-refresh cada 30 segundos
+setTimeout(() => {
+    location.reload();
+}, 30000);
+</script>
 
 </body>
 </html>
