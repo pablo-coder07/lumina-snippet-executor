@@ -1,15 +1,15 @@
 <?php
-// execute-snippet.php CORREGIDO FINAL - Sin redeclarar funciones nativas
+// execute-snippet.php - MOCKS COMPLETOS de WordPress
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 
-// Limpiar cualquier output previo
+// Limpiar output previo
 if (ob_get_level()) {
     ob_end_clean();
 }
 
-// Headers CORS específicos
+// Headers CORS
 header('Access-Control-Allow-Origin: https://lumina.market');
 header('Access-Control-Allow-Methods: POST, OPTIONS, GET');
 header('Access-Control-Allow-Headers: Content-Type, X-API-Key, X-Request-ID, User-Agent');
@@ -86,18 +86,18 @@ if (empty($shortcode_name)) {
 debug_log("Processing shortcode: " . $shortcode_name);
 
 // ================================================================
-// MOCKS WORDPRESS CORREGIDOS - SIN REDECLARACIONES
+// MOCKS COMPLETOS DE WORDPRESS PARA RENDER
 // ================================================================
 
 $GLOBALS['mock_shortcodes'] = [];
 
-// Mock de add_shortcode - registra en global
+// Mock básico de add_shortcode
 function add_shortcode($tag, $callback) {
     debug_log("Mock add_shortcode registrado", ['tag' => $tag]);
     $GLOBALS['mock_shortcodes'][$tag] = $callback;
 }
 
-// Mock de do_shortcode - ejecuta si existe
+// Mock básico de do_shortcode
 function do_shortcode($content) {
     if (preg_match('/\[([^\]]+)\]/', $content, $matches)) {
         $shortcode = $matches[1];
@@ -111,25 +111,110 @@ function do_shortcode($content) {
     return $content;
 }
 
-// Mock de funciones WordPress SIN REDECLARAR NATIVAS
+// ================================================================
+// MOCKS DE FUNCIONES WORDPRESS MÁS COMUNES
+// ================================================================
+
+// Funciones de URL y paths
+if (!function_exists('plugin_dir_url')) {
+    function plugin_dir_url($file = '') {
+        debug_log("Mock plugin_dir_url called", ['file' => $file]);
+        return 'https://lumina.market/wp-content/plugins/drawcode/';
+    }
+}
+
+if (!function_exists('plugin_dir_path')) {
+    function plugin_dir_path($file = '') {
+        debug_log("Mock plugin_dir_path called", ['file' => $file]);
+        return '/var/www/html/wp-content/plugins/drawcode/';
+    }
+}
+
+if (!function_exists('plugins_url')) {
+    function plugins_url($path = '', $plugin = '') {
+        debug_log("Mock plugins_url called", ['path' => $path, 'plugin' => $plugin]);
+        return 'https://lumina.market/wp-content/plugins/' . ltrim($path, '/');
+    }
+}
+
+if (!function_exists('site_url')) {
+    function site_url($path = '', $scheme = null) {
+        return 'https://lumina.market' . ($path ? '/' . ltrim($path, '/') : '');
+    }
+}
+
+if (!function_exists('home_url')) {
+    function home_url($path = '', $scheme = null) {
+        return 'https://lumina.market' . ($path ? '/' . ltrim($path, '/') : '');
+    }
+}
+
+if (!function_exists('admin_url')) {
+    function admin_url($path = '', $scheme = 'admin') {
+        return 'https://lumina.market/wp-admin/' . ltrim($path, '/');
+    }
+}
+
+if (!function_exists('content_url')) {
+    function content_url($path = '') {
+        return 'https://lumina.market/wp-content/' . ltrim($path, '/');
+    }
+}
+
+// Funciones de assets/enqueue
 if (!function_exists('wp_enqueue_script')) {
-    function wp_enqueue_script() { /* No-op */ }
+    function wp_enqueue_script($handle = '', $src = '', $deps = array(), $ver = false, $in_footer = false) {
+        debug_log("Mock wp_enqueue_script", ['handle' => $handle, 'src' => $src]);
+    }
 }
 
 if (!function_exists('wp_enqueue_style')) {
-    function wp_enqueue_style() { /* No-op */ }
+    function wp_enqueue_style($handle = '', $src = '', $deps = array(), $ver = false, $media = 'all') {
+        debug_log("Mock wp_enqueue_style", ['handle' => $handle, 'src' => $src]);
+    }
 }
 
 if (!function_exists('wp_localize_script')) {
-    function wp_localize_script() { /* No-op */ }
+    function wp_localize_script($handle, $object_name, $l10n) {
+        debug_log("Mock wp_localize_script", ['handle' => $handle, 'object' => $object_name]);
+    }
 }
 
+if (!function_exists('wp_register_script')) {
+    function wp_register_script($handle, $src, $deps = array(), $ver = false, $in_footer = false) {
+        debug_log("Mock wp_register_script", ['handle' => $handle, 'src' => $src]);
+    }
+}
+
+if (!function_exists('wp_register_style')) {
+    function wp_register_style($handle, $src, $deps = array(), $ver = false, $media = 'all') {
+        debug_log("Mock wp_register_style", ['handle' => $handle, 'src' => $src]);
+    }
+}
+
+// Funciones de opciones/configuración
 if (!function_exists('get_option')) {
     function get_option($option, $default = false) { 
+        debug_log("Mock get_option", ['option' => $option, 'default' => $default]);
         return $default; 
     }
 }
 
+if (!function_exists('update_option')) {
+    function update_option($option, $value, $autoload = null) {
+        debug_log("Mock update_option", ['option' => $option, 'value' => $value]);
+        return true;
+    }
+}
+
+if (!function_exists('add_option')) {
+    function add_option($option, $value = '', $deprecated = '', $autoload = 'yes') {
+        debug_log("Mock add_option", ['option' => $option, 'value' => $value]);
+        return true;
+    }
+}
+
+// Funciones de usuario/permisos
 if (!function_exists('is_admin')) {
     function is_admin() { 
         return false; 
@@ -142,15 +227,131 @@ if (!function_exists('current_user_can')) {
     }
 }
 
-// SOLUCIÓN PARA defined() - NO redeclarar, usar mock ABSPATH
+if (!function_exists('is_user_logged_in')) {
+    function is_user_logged_in() {
+        return true;
+    }
+}
+
+if (!function_exists('get_current_user_id')) {
+    function get_current_user_id() {
+        return 1;
+    }
+}
+
+// Funciones de sanitización
+if (!function_exists('sanitize_text_field')) {
+    function sanitize_text_field($str) {
+        return strip_tags(trim($str));
+    }
+}
+
+if (!function_exists('sanitize_email')) {
+    function sanitize_email($email) {
+        return filter_var(trim($email), FILTER_SANITIZE_EMAIL);
+    }
+}
+
+if (!function_exists('esc_html')) {
+    function esc_html($text) {
+        return htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
+    }
+}
+
+if (!function_exists('esc_attr')) {
+    function esc_attr($text) {
+        return htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
+    }
+}
+
+if (!function_exists('esc_url')) {
+    function esc_url($url, $protocols = null, $_context = 'display') {
+        return filter_var($url, FILTER_SANITIZE_URL);
+    }
+}
+
+// Funciones de nonce/seguridad
+if (!function_exists('wp_create_nonce')) {
+    function wp_create_nonce($action = -1) {
+        return 'mock_nonce_' . md5($action . time());
+    }
+}
+
+if (!function_exists('wp_verify_nonce')) {
+    function wp_verify_nonce($nonce, $action = -1) {
+        return true; // Siempre válido en mock
+    }
+}
+
+// Funciones de hooks/actions
+if (!function_exists('add_action')) {
+    function add_action($tag, $function_to_add, $priority = 10, $accepted_args = 1) {
+        debug_log("Mock add_action", ['tag' => $tag, 'function' => $function_to_add]);
+    }
+}
+
+if (!function_exists('add_filter')) {
+    function add_filter($tag, $function_to_add, $priority = 10, $accepted_args = 1) {
+        debug_log("Mock add_filter", ['tag' => $tag, 'function' => $function_to_add]);
+    }
+}
+
+if (!function_exists('do_action')) {
+    function do_action($tag, ...$args) {
+        debug_log("Mock do_action", ['tag' => $tag]);
+    }
+}
+
+if (!function_exists('apply_filters')) {
+    function apply_filters($tag, $value, ...$args) {
+        debug_log("Mock apply_filters", ['tag' => $tag]);
+        return $value;
+    }
+}
+
+// Funciones de AJAX
+if (!function_exists('wp_die')) {
+    function wp_die($message = '', $title = '', $args = array()) {
+        debug_log("Mock wp_die", ['message' => $message]);
+        exit($message);
+    }
+}
+
+if (!function_exists('wp_send_json_success')) {
+    function wp_send_json_success($data = null) {
+        echo json_encode(['success' => true, 'data' => $data]);
+        exit;
+    }
+}
+
+if (!function_exists('wp_send_json_error')) {
+    function wp_send_json_error($data = null) {
+        echo json_encode(['success' => false, 'data' => $data]);
+        exit;
+    }
+}
+
+// Definir ABSPATH si no existe
 if (!defined('ABSPATH')) {
     define('ABSPATH', '/mock/wordpress/path/');
 }
 
-debug_log("WordPress mocks inicializados correctamente");
+// Definir otras constantes comunes
+if (!defined('WP_CONTENT_URL')) {
+    define('WP_CONTENT_URL', 'https://lumina.market/wp-content');
+}
+
+if (!defined('WP_PLUGIN_URL')) {
+    define('WP_PLUGIN_URL', 'https://lumina.market/wp-content/plugins');
+}
+
+debug_log("WordPress mocks completos inicializados", [
+    'mocks_count' => 35,
+    'constants_defined' => ['ABSPATH', 'WP_CONTENT_URL', 'WP_PLUGIN_URL']
+]);
 
 // ================================================================
-// BÚSQUEDA DE ARCHIVO
+// RESTO DEL CÓDIGO IGUAL (búsqueda y ejecución)
 // ================================================================
 
 $snippets_dir = __DIR__ . '/snippets/';
@@ -213,29 +414,26 @@ if (!$snippet_file || !file_exists($snippet_file)) {
 debug_log("Ejecutando archivo", ['file' => basename($snippet_file), 'size' => filesize($snippet_file)]);
 
 // ================================================================
-// EJECUCIÓN SEGURA CON MOCKS
+// EJECUCIÓN SEGURA
 // ================================================================
 
 $start_time = microtime(true);
 
 try {
-    // Limpiar buffers de salida
     while (ob_get_level()) {
         ob_end_clean();
     }
     ob_start();
     
-    // Incluir el archivo PHP
     include $snippet_file;
     
-    // Ejecutar shortcode si fue registrado
     $shortcode_executed = false;
     if (isset($GLOBALS['mock_shortcodes'][$shortcode_name])) {
         debug_log("Ejecutando shortcode: " . $shortcode_name);
         
         $callback = $GLOBALS['mock_shortcodes'][$shortcode_name];
         if (is_callable($callback)) {
-            ob_clean(); // Limpiar output del include
+            ob_clean();
             $execution_output = call_user_func($callback);
             echo $execution_output;
             $shortcode_executed = true;
@@ -268,12 +466,11 @@ try {
         $html = preg_replace('/<script[^>]*>.*?<\/script>/is', '', $html);
     }
     
-    // Limpiar y validar para JSON
+    // Limpiar para JSON
     $html = trim($html);
     $css = trim($css);
     $js = trim($js);
     
-    // Validar UTF-8
     if (!mb_check_encoding($html, 'UTF-8')) {
         $html = mb_convert_encoding($html, 'UTF-8', 'auto');
     }
@@ -296,10 +493,7 @@ try {
         'remote_execution' => true,
         'timestamp' => time(),
         'mock_shortcodes_registered' => array_keys($GLOBALS['mock_shortcodes']),
-        'debug_info' => [
-            'file_size' => filesize($snippet_file),
-            'candidates_found' => count($candidates)
-        ]
+        'mocks_available' => 35
     ];
     
     debug_log("Enviando respuesta exitosa", [
