@@ -1,5 +1,5 @@
 <?php
-// save-snippet.php MEJORADO - Con mejor debugging y validaciones
+// save-snippet.php MEJORADO - Con backup automático a GitHub
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
@@ -256,6 +256,41 @@ debug_log("File saved successfully", [
     'total_php_files' => $total_files
 ]);
 
+// ================================================================
+// NUEVO: BACKUP AUTOMÁTICO A GITHUB
+// ================================================================
+
+$backup_success = false;
+$backup_error = null;
+
+try {
+    debug_log("🔄 INICIANDO BACKUP AUTOMÁTICO A GITHUB");
+    
+    // Incluir clase de backup
+    require_once __DIR__ . '/github-backup.php';
+    
+    // Crear instancia de backup
+    $github_backup = new GitHubBackup();
+    
+    // Realizar backup del archivo recién creado
+    $backup_result = $github_backup->backup_file($filepath, $filename);
+    
+    if ($backup_result) {
+        $backup_success = true;
+        debug_log("✅ BACKUP AUTOMÁTICO EXITOSO", ['filename' => $filename]);
+    } else {
+        $backup_error = "Falló el backup automático";
+        debug_log("❌ BACKUP AUTOMÁTICO FALLÓ", ['filename' => $filename]);
+    }
+    
+} catch (Exception $e) {
+    $backup_error = $e->getMessage();
+    debug_log("❌ ERROR EN BACKUP AUTOMÁTICO", [
+        'error' => $e->getMessage(),
+        'filename' => $filename
+    ]);
+}
+
 // Test de lectura inmediato para asegurar integridad
 $read_test = file_get_contents($filepath);
 $read_test_success = $read_test !== false && strlen($read_test) === $file_size;
@@ -266,7 +301,7 @@ debug_log("Read test", [
     'expected_length' => $file_size
 ]);
 
-// Respuesta exitosa con información completa
+// Respuesta exitosa con información completa + info de backup
 $response = [
     'success' => true,
     'filename' => $filename,
@@ -279,19 +314,28 @@ $response = [
     'saved_at' => date('Y-m-d H:i:s', $timestamp),
     'working_directory' => $snippets_dir,
     'read_test_passed' => $read_test_success,
+    // NUEVA INFORMACIÓN DE BACKUP
+    'github_backup' => [
+        'enabled' => true,
+        'success' => $backup_success,
+        'error' => $backup_error,
+        'timestamp' => date('Y-m-d H:i:s')
+    ],
     'debug_info' => [
         'user_id' => $user_id,
         'original_code_length' => strlen($code),
         'final_code_length' => strlen($final_code),
         'includes_metadata' => true,
-        'php_format_correct' => str_starts_with(trim($final_code), '<?php')
+        'php_format_correct' => str_starts_with(trim($final_code), '<?php'),
+        'backup_attempted' => true
     ]
 ];
 
 debug_log("Returning success response", [
     'filename' => $filename,
     'size' => $file_size,
-    'total_files' => $total_files
+    'total_files' => $total_files,
+    'backup_success' => $backup_success
 ]);
 
 echo json_encode($response);
