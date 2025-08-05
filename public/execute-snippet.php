@@ -364,54 +364,180 @@ $snippet_file = null;
 $latest_timestamp = 0;
 $candidates = [];
 $files = scandir($snippets_dir);
+$search_strategies = [];
+
+debug_log("🔍 BÚSQUEDA AVANZADA DE ARCHIVOS", [
+    'shortcode_buscado' => $shortcode_name,
+    'total_files' => count($files)
+]);
 
 foreach ($files as $file) {
     if (pathinfo($file, PATHINFO_EXTENSION) === 'php') {
-        $patterns = [
+        // ESTRATEGIA 1: Coincidencia exacta
+        $patterns_exact = [
             '/^' . preg_quote($shortcode_name, '/') . '_(\d+)\.php$/',
             '/^' . preg_quote($shortcode_name, '/') . '_v\d+_(\d+)\.php$/'
         ];
         
-        foreach ($patterns as $pattern) {
+        foreach ($patterns_exact as $pattern_index => $pattern) {
             if (preg_match($pattern, $file, $matches)) {
                 $file_timestamp = intval($matches[1]);
                 $candidate = [
                     'file' => $file,
                     'timestamp' => $file_timestamp,
-                    'path' => $snippets_dir . $file
+                    'path' => $snippets_dir . $file,
+                    'strategy' => 'exact_match',
+                    'pattern_index' => $pattern_index
                 ];
                 
                 $candidates[] = $candidate;
+                $search_strategies[] = "Exacta: $file";
                 
                 if ($file_timestamp > $latest_timestamp) {
                     $latest_timestamp = $file_timestamp;
                     $snippet_file = $snippets_dir . $file;
                 }
                 
-                debug_log("Candidato encontrado", $candidate);
+                debug_log("✅ Coincidencia exacta encontrada", $candidate);
                 break;
+            }
+        }
+        
+        // ESTRATEGIA 2: Coincidencia por contenido del archivo (más lenta pero precisa)
+        if (!$snippet_file) {
+            $file_path = $snippets_dir . $file;
+            $file_content = file_get_contents($file_path);
+            
+            // Buscar el shortcode registrado dentro del archivo
+            if (preg_match('/add_shortcode\s*\(\s*[\'"]([^\'"]+)[\'"]/', $file_content, $shortcode_matches)) {
+                $file_shortcode = $shortcode_matches[1];
+                
+                if ($file_shortcode === $shortcode_name) {
+                    // Extraer timestamp del nombre del archivo
+                    if (preg_match('/_(\d+)\.php$/', $file, $timestamp_matches)) {
+                        $file_timestamp = intval($timestamp_matches[1]);
+                        
+                        $candidate = [
+                            'file' => $file,
+                            'timestamp' => $file_timestamp,
+                            'path' => $file_path,
+                            'strategy' => 'content_match',
+                            'found_shortcode' => $file_shortcode
+                        ];
+                        
+                        $candidates[] = $candidate;
+                        $search_strategies[] = "Contenido: $file ($file_shortcode)";
+                        
+                        if ($file_timestamp > $latest_timestamp) {
+                            $latest_timestamp = $file_timestamp;
+                            $snippet_file = $file_path;
+                        }
+                        
+                        debug_log("✅ Coincidencia por contenido encontrada", $candidate);
+                    }
+                }
+            }
+        }
+        
+        // ESTRATEGIA 3: Coincidencia parcial (shortcode base)
+        if (!$snippet_file) {
+            // Intentar match con nombre base (sin versiones)
+            $base_shortcode = preg_replace('/_v\d+$/', '', $shortcode_name);
+            $base_patterns = [
+                '/^' . preg_quote($base_shortcode, '/') . '_v\d+_(\d+)\.php$/',
+                '/^' . preg_quote($base_shortcode, '/') . '_(\d+)\.php$/'
+            ];
+            
+            foreach ($base_patterns as $pattern_index => $pattern) {
+                if (preg_match($pattern, $file, $matches)) {
+                    $file_timestamp = intval($matches[1]);
+                    $candidate = [
+                        'file' => $file,
+                        'timestamp' => $file_timestamp,
+                        'path' => $snippets_dir . $file,
+                        'strategy' => 'partial_match',
+                        'base_shortcode' => $base_shortcode,
+                        'pattern_index' => $pattern_index
+                    ];
+                    
+                    $candidates[] = $candidate;
+                    $search_strategies[] = "Parcial: $file (base: $base_shortcode)";
+                    
+                    // Solo usar si no hay match exacto
+                    if ($file_timestamp > $latest_timestamp) {
+                        $latest_timestamp = $file_timestamp;
+                        $snippet_file = $snippets_dir . $file;
+                    }
+                    
+                    debug_log("⚠️ Coincidencia parcial encontrada", $candidate);
+                    break;
+                }
             }
         }
     }
 }
 
+debug_log("📊 RESULTADO DE BÚSQUEDA", [
+    'candidates_found' => count($candidates),
+    'strategies_used' => $search_strategies,
+    'latest_timestamp' => $latest_timestamp,
+    'selected_file' => $snippet_file ? basename($snippet_file) : 'none'
+]);
+
+// Si no se encontró archivo, buscar el más reciente que contenga el shortcode
+if (!$snippet_file && !empty($candidates)) {
+    // Ordenar candidatos por timestamp (más reciente primero)
+    usort($candidates, function($a, $b) {
+        return $b['timestamp'] - $a['timestamp'];
+    });
+    
+    $best_candidate = $candidates[0];
+    $snippet_file = $best_candidate['path'];
+    
+    debug_log("🎯 Usando mejor candidato", [
+        'file' => $best_candidate['file'],
+        'strategy' => $best_candidate['strategy'],
+        'timestamp' => $best_candidate['timestamp']
+    ]);
+}
+
 if (!$snippet_file || !file_exists($snippet_file)) {
-    debug_log("ERROR: Snippet file not found");
+    debug_log("❌ ERROR: Snippet file not found después de búsqueda exhaustiva", [
+        'shortcode_buscado' => $shortcode_name,
+        'candidates_tried' => count($candidates),
+        'strategies' => $search_strategies
+    ]);
     
     $php_files = array_filter($files, function($f) {
         return pathinfo($f, PATHINFO_EXTENSION) === 'php';
     });
     
+    // Listar todos los shortcodes disponibles para debugging
+    $available_shortcodes = [];
+    foreach ($php_files as $php_file) {
+        $file_content = file_get_contents($snippets_dir . $php_file);
+        if (preg_match('/add_shortcode\s*\(\s*[\'"]([^\'"]+)[\'"]/', $file_content, $matches)) {
+            $available_shortcodes[] = $matches[1];
+        }
+    }
+    
     send_json_response([
         'success' => false,
-        'error' => 'Snippet not found',
-        'shortcode' => $shortcode_name,
+        'error' => 'Snippet not found after exhaustive search',
+        'shortcode_requested' => $shortcode_name,
         'candidates_found' => $candidates,
-        'available_files' => array_values($php_files)
+        'search_strategies' => $search_strategies,
+        'available_php_files' => array_values($php_files),
+        'available_shortcodes' => $available_shortcodes,
+        'suggestion' => 'Check if shortcode name matches exactly with registered shortcode in file'
     ], 404);
 }
 
-debug_log("Ejecutando archivo", ['file' => basename($snippet_file), 'size' => filesize($snippet_file)]);
+debug_log("✅ Archivo seleccionado para ejecución", [
+    'file' => basename($snippet_file),
+    'size' => filesize($snippet_file) . ' bytes',
+    'strategy_used' => 'multiple_strategies'
+]);
 
 // ================================================================
 // EJECUCIÓN SEGURA
