@@ -1,10 +1,14 @@
 <?php
-// execute-snippet.php CORREGIDO - Para ejecutar código WordPress sin WordPress
+// execute-snippet.php CORREGIDO - JSON sin errores de sintaxis
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 
-// Headers CORS
+// Headers CORS - IMPORTANTE: Limpiar cualquier output previo
+if (ob_get_level()) {
+    ob_end_clean();
+}
+
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
@@ -26,9 +30,31 @@ function debug_log($message, $data = null) {
     $timestamp = date('Y-m-d H:i:s');
     $log_entry = "[{$timestamp}] EXECUTE-SNIPPET: {$message}";
     if ($data !== null) {
-        $log_entry .= " | Data: " . json_encode($data);
+        $log_entry .= " | Data: " . json_encode($data, JSON_UNESCAPED_UNICODE);
     }
     error_log($log_entry);
+}
+
+// Función para enviar respuesta JSON limpia
+function send_json_response($data, $status_code = 200) {
+    // Limpiar cualquier output buffer
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    
+    http_response_code($status_code);
+    
+    // Asegurar que no hay caracteres extra
+    $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        // Si hay error en JSON, enviar error simple
+        $error_response = ['success' => false, 'error' => 'JSON encoding failed: ' . json_last_error_msg()];
+        echo json_encode($error_response);
+    } else {
+        echo $json;
+    }
+    exit;
 }
 
 debug_log("=== NUEVA SOLICITUD DE EJECUCIÓN ===");
@@ -37,25 +63,19 @@ debug_log("=== NUEVA SOLICITUD DE EJECUCIÓN ===");
 $raw_input = file_get_contents('php://input');
 if (empty($raw_input)) {
     debug_log("ERROR: Empty input");
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'Empty request body']);
-    exit;
+    send_json_response(['success' => false, 'error' => 'Empty request body'], 400);
 }
 
 $input = json_decode($raw_input, true);
 if (json_last_error() !== JSON_ERROR_NONE) {
     debug_log("ERROR: JSON decode failed", ['error' => json_last_error_msg()]);
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'Invalid JSON']);
-    exit;
+    send_json_response(['success' => false, 'error' => 'Invalid JSON input'], 400);
 }
 
 $shortcode_name = $input['shortcode'] ?? '';
 if (empty($shortcode_name)) {
     debug_log("ERROR: Shortcode missing");
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'Shortcode required']);
-    exit;
+    send_json_response(['success' => false, 'error' => 'Shortcode required'], 400);
 }
 
 debug_log("Processing shortcode: " . $shortcode_name);
@@ -64,19 +84,14 @@ debug_log("Processing shortcode: " . $shortcode_name);
 // MOCK DE FUNCIONES WORDPRESS PARA RENDER
 // ================================================================
 
-// Variables globales para simular WordPress
 $GLOBALS['mock_shortcodes'] = [];
-$GLOBALS['mock_output'] = '';
 
-// Mock de add_shortcode - En lugar de registrar, ejecutamos directamente
 function add_shortcode($tag, $callback) {
-    debug_log("Mock add_shortcode called", ['tag' => $tag, 'callback' => $callback]);
+    debug_log("Mock add_shortcode called", ['tag' => $tag]);
     $GLOBALS['mock_shortcodes'][$tag] = $callback;
 }
 
-// Mock de do_shortcode - Ejecuta el shortcode mock
 function do_shortcode($content) {
-    // Buscar shortcodes en el contenido
     if (preg_match('/\[([^\]]+)\]/', $content, $matches)) {
         $shortcode = $matches[1];
         if (isset($GLOBALS['mock_shortcodes'][$shortcode])) {
@@ -89,7 +104,7 @@ function do_shortcode($content) {
     return $content;
 }
 
-// Mock de otras funciones WordPress comunes
+// Mock de otras funciones WordPress
 function defined($name) {
     if ($name === 'ABSPATH') return true;
     return \defined($name);
@@ -105,18 +120,15 @@ function current_user_can($capability) { return true; }
 debug_log("WordPress mocks initialized");
 
 // ================================================================
-// BUSCAR Y EJECUTAR ARCHIVO
+// BUSCAR ARCHIVO
 // ================================================================
 
 $snippets_dir = __DIR__ . '/snippets/';
 if (!is_dir($snippets_dir)) {
     debug_log("ERROR: Snippets directory missing");
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => 'Snippets directory not found']);
-    exit;
+    send_json_response(['success' => false, 'error' => 'Snippets directory not found'], 500);
 }
 
-// Buscar archivo
 $snippet_file = null;
 $latest_timestamp = 0;
 $files = scandir($snippets_dir);
@@ -135,7 +147,7 @@ foreach ($files as $file) {
                     $latest_timestamp = $file_timestamp;
                     $snippet_file = $snippets_dir . $file;
                 }
-                debug_log("Found candidate: " . $file . " (timestamp: " . $file_timestamp . ")");
+                debug_log("Found candidate: " . $file);
                 break;
             }
         }
@@ -143,58 +155,56 @@ foreach ($files as $file) {
 }
 
 if (!$snippet_file || !file_exists($snippet_file)) {
-    debug_log("ERROR: Snippet file not found", ['shortcode' => $shortcode_name]);
+    debug_log("ERROR: Snippet file not found");
     
     $php_files = array_filter($files, function($f) {
         return pathinfo($f, PATHINFO_EXTENSION) === 'php';
     });
     
-    http_response_code(404);
-    echo json_encode([
+    send_json_response([
         'success' => false,
         'error' => 'Snippet not found',
         'shortcode' => $shortcode_name,
         'available_files' => array_values($php_files)
-    ]);
-    exit;
+    ], 404);
 }
 
 debug_log("Executing file: " . basename($snippet_file));
 
 // ================================================================
-// EJECUCIÓN CON CAPTURA DE OUTPUT
+// EJECUCIÓN SEGURA CON CAPTURA DE OUTPUT
 // ================================================================
 
 $start_time = microtime(true);
-$execution_error = '';
 
 try {
-    // Capturar output
+    // Iniciar captura de output con buffer limpio
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
     ob_start();
     
-    // Incluir el archivo (que registrará el shortcode via add_shortcode mock)
+    // Incluir archivo PHP
     include $snippet_file;
     
-    // Si el archivo definió un shortcode, ejecutarlo
+    // Ejecutar shortcode si existe
     $shortcode_executed = false;
     if (isset($GLOBALS['mock_shortcodes'][$shortcode_name])) {
-        debug_log("Shortcode found in mocks, executing: " . $shortcode_name);
+        debug_log("Executing shortcode callback: " . $shortcode_name);
         
         $callback = $GLOBALS['mock_shortcodes'][$shortcode_name];
         if (is_callable($callback)) {
             $shortcode_output = call_user_func($callback);
+            
+            // Limpiar buffer anterior y usar solo el output del shortcode
+            ob_clean();
             echo $shortcode_output;
             $shortcode_executed = true;
-            debug_log("Shortcode executed successfully");
         }
     }
     
     $output = ob_get_clean();
     $execution_time = round((microtime(true) - $start_time) * 1000, 2);
-    
-    if (!$shortcode_executed) {
-        debug_log("WARNING: Shortcode not executed via callback, using direct output");
-    }
     
     debug_log("Execution completed", [
         'output_length' => strlen($output),
@@ -202,85 +212,92 @@ try {
         'shortcode_executed' => $shortcode_executed
     ]);
     
-    // Procesar output
+    // Procesar output de forma segura
     $html = $output;
     $css = '';
     $js = '';
     
-    // Extraer CSS
+    // Extraer CSS de forma segura
     if (preg_match_all('/<style[^>]*>(.*?)<\/style>/is', $output, $css_matches)) {
         $css = implode("\n", $css_matches[1]);
         $html = preg_replace('/<style[^>]*>.*?<\/style>/is', '', $html);
     }
     
-    // Extraer JavaScript
+    // Extraer JavaScript de forma segura
     if (preg_match_all('/<script[^>]*>(.*?)<\/script>/is', $html, $js_matches)) {
         $js = implode("\n", $js_matches[1]);
         $html = preg_replace('/<script[^>]*>.*?<\/script>/is', '', $html);
     }
     
-    // Respuesta exitosa
+    // Limpiar strings para JSON seguro
+    $html = trim($html);
+    $css = trim($css);
+    $js = trim($js);
+    
+    // Verificar que los strings son válidos para JSON
+    if (!mb_check_encoding($html, 'UTF-8')) {
+        $html = mb_convert_encoding($html, 'UTF-8', 'auto');
+    }
+    if (!mb_check_encoding($css, 'UTF-8')) {
+        $css = mb_convert_encoding($css, 'UTF-8', 'auto');
+    }
+    if (!mb_check_encoding($js, 'UTF-8')) {
+        $js = mb_convert_encoding($js, 'UTF-8', 'auto');
+    }
+    
+    // Respuesta final
     $response = [
         'success' => true,
-        'html' => trim($html),
-        'css' => trim($css),
-        'js' => trim($js),
+        'html' => $html,
+        'css' => $css,
+        'js' => $js,
         'execution_time' => $execution_time,
         'file_used' => basename($snippet_file),
         'shortcode_executed' => $shortcode_executed,
-        'mock_shortcodes_registered' => array_keys($GLOBALS['mock_shortcodes']),
-        'debug_info' => [
-            'timestamp' => time(),
-            'file_size' => filesize($snippet_file),
-            'execution_method' => $shortcode_executed ? 'callback' : 'direct_output'
-        ]
+        'timestamp' => time()
     ];
     
-    debug_log("Returning success response", [
-        'html_length' => strlen($response['html']),
-        'css_length' => strlen($response['css']),
-        'js_length' => strlen($response['js'])
+    debug_log("Sending success response", [
+        'html_length' => strlen($html),
+        'css_length' => strlen($css),
+        'js_length' => strlen($js)
     ]);
     
-    echo json_encode($response);
+    send_json_response($response);
     
 } catch (ParseError $e) {
     ob_end_clean();
-    $error = "Parse Error: " . $e->getMessage() . " in line " . $e->getLine();
-    debug_log("Parse error", ['error' => $error]);
+    debug_log("Parse error", ['error' => $e->getMessage(), 'line' => $e->getLine()]);
     
-    http_response_code(500);
-    echo json_encode([
+    send_json_response([
         'success' => false,
-        'error' => $error,
+        'error' => 'Parse Error: ' . $e->getMessage(),
         'error_type' => 'parse_error',
+        'line' => $e->getLine(),
         'file_used' => basename($snippet_file)
-    ]);
+    ], 500);
     
 } catch (Error $e) {
     ob_end_clean();
-    $error = "Fatal Error: " . $e->getMessage() . " in line " . $e->getLine();
-    debug_log("Fatal error", ['error' => $error]);
+    debug_log("Fatal error", ['error' => $e->getMessage(), 'line' => $e->getLine()]);
     
-    http_response_code(500);
-    echo json_encode([
+    send_json_response([
         'success' => false,
-        'error' => $error,
+        'error' => 'Fatal Error: ' . $e->getMessage(),
         'error_type' => 'fatal_error',
+        'line' => $e->getLine(),
         'file_used' => basename($snippet_file)
-    ]);
+    ], 500);
     
 } catch (Exception $e) {
     ob_end_clean();
-    $error = "Exception: " . $e->getMessage();
-    debug_log("Exception", ['error' => $error]);
+    debug_log("Exception", ['error' => $e->getMessage()]);
     
-    http_response_code(500);
-    echo json_encode([
+    send_json_response([
         'success' => false,
-        'error' => $error,
+        'error' => 'Exception: ' . $e->getMessage(),
         'error_type' => 'exception',
         'file_used' => basename($snippet_file)
-    ]);
+    ], 500);
 }
 ?>
