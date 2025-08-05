@@ -1,8 +1,11 @@
 <?php
-// github-backup.php - Sistema de backup automático a GitHub
+// github-backup.php - Sistema de backup automático a GitHub (VERSIÓN SEGURA)
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
+
+// Incluir configuración segura
+require_once __DIR__ . '/config-secure.php';
 
 class GitHubBackup {
     private $github_token;
@@ -10,14 +13,36 @@ class GitHubBackup {
     private $github_repo;
     private $github_branch;
     private $backup_folder;
+    private $config_info;
     
     public function __construct() {
-        // CONFIGURACIÓN - Reemplaza con tu token de GitHub
-        $this->github_token = 'TU_GITHUB_TOKEN_AQUI'; // Reemplazar con el token real
-        $this->github_user = 'pablo-coder07';
-        $this->github_repo = 'lumina-snippet-executor';
-        $this->github_branch = 'main';
-        $this->backup_folder = 'snippets-backup';
+        try {
+            // Cargar configuración de forma segura
+            $this->github_token = SecureConfig::get('github_token');
+            $this->github_user = SecureConfig::get('github_user');
+            $this->github_repo = SecureConfig::get('github_repo');
+            $this->github_branch = SecureConfig::get('github_branch');
+            $this->backup_folder = SecureConfig::get('backup_folder');
+            $this->config_info = SecureConfig::getInfo();
+            
+            // Validar configuración
+            if (empty($this->github_token)) {
+                throw new Exception('GitHub token no configurado. Verificar variables de entorno o configuración.');
+            }
+            
+            $this->debug_log("GitHubBackup inicializado", [
+                'config_source' => $this->config_info['config_source'],
+                'is_secure' => $this->config_info['is_secure'],
+                'token_present' => $this->config_info['token_present'],
+                'repo' => $this->github_user . '/' . $this->github_repo
+            ]);
+            
+        } catch (Exception $e) {
+            $this->debug_log("ERROR: No se pudo inicializar GitHubBackup", [
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
     }
     
     /**
@@ -27,20 +52,42 @@ class GitHubBackup {
         $timestamp = date('Y-m-d H:i:s');
         $log_entry = "[{$timestamp}] GITHUB-BACKUP: {$message}";
         if ($data !== null) {
-            $log_entry .= " | Data: " . json_encode($data, JSON_UNESCAPED_UNICODE);
+            // Filtrar datos sensibles del log
+            $safe_data = $this->sanitizeLogData($data);
+            $log_entry .= " | Data: " . json_encode($safe_data, JSON_UNESCAPED_UNICODE);
         }
         error_log($log_entry);
     }
     
     /**
-     * Realizar petición a la API de GitHub
+     * Sanitizar datos para logging (eliminar información sensible)
+     */
+    private function sanitizeLogData($data) {
+        if (is_array($data)) {
+            $sanitized = [];
+            foreach ($data as $key => $value) {
+                if (stripos($key, 'token') !== false || stripos($key, 'key') !== false || stripos($key, 'password') !== false) {
+                    $sanitized[$key] = '[REDACTED]';
+                } elseif (is_array($value)) {
+                    $sanitized[$key] = $this->sanitizeLogData($value);
+                } else {
+                    $sanitized[$key] = $value;
+                }
+            }
+            return $sanitized;
+        }
+        return $data;
+    }
+    
+    /**
+     * Realizar petición a la API de GitHub de forma segura
      */
     private function github_request($endpoint, $method = 'GET', $data = null) {
         $url = "https://api.github.com/repos/{$this->github_user}/{$this->github_repo}" . $endpoint;
         
         $headers = [
             'Authorization: token ' . $this->github_token,
-            'User-Agent: Lumina-Backup-System',
+            'User-Agent: Lumina-Backup-System-Secure',
             'Accept: application/vnd.github.v3+json',
             'Content-Type: application/json'
         ];
@@ -51,6 +98,8 @@ class GitHubBackup {
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
         curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
         
         if ($data && in_array($method, ['POST', 'PUT', 'PATCH'])) {
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
@@ -62,7 +111,7 @@ class GitHubBackup {
         curl_close($ch);
         
         if ($curl_error) {
-            $this->debug_log("CURL Error", ['error' => $curl_error, 'url' => $url]);
+            $this->debug_log("CURL Error", ['error' => $curl_error, 'endpoint' => $endpoint]);
             return false;
         }
         
@@ -76,10 +125,19 @@ class GitHubBackup {
         ]);
         
         if ($http_code >= 400) {
-            $this->debug_log("GitHub API Error", [
+            // Log error pero sin exponer detalles sensibles
+            $error_info = [
                 'http_code' => $http_code,
-                'response' => $decoded_response
-            ]);
+                'error_type' => $decoded_response['message'] ?? 'Unknown error'
+            ];
+            
+            if ($http_code === 401) {
+                $error_info['suggestion'] = 'Verificar token de GitHub y permisos';
+            } elseif ($http_code === 403) {
+                $error_info['suggestion'] = 'Rate limit alcanzado o permisos insuficientes';
+            }
+            
+            $this->debug_log("GitHub API Error", $error_info);
             return false;
         }
         
@@ -127,7 +185,7 @@ class GitHubBackup {
         $existing_sha = $this->get_file_sha($filename);
         
         $commit_data = [
-            'message' => "🔄 Backup automático: {$filename} - " . date('Y-m-d H:i:s'),
+            'message' => "🔄 Backup automático seguro: {$filename} - " . date('Y-m-d H:i:s'),
             'content' => base64_encode($file_content),
             'branch' => $this->github_branch
         ];
@@ -135,7 +193,7 @@ class GitHubBackup {
         // Si el archivo ya existe, incluir SHA para actualización
         if ($existing_sha) {
             $commit_data['sha'] = $existing_sha;
-            $this->debug_log("Archivo existe en GitHub, actualizando", ['sha' => $existing_sha]);
+            $this->debug_log("Archivo existe en GitHub, actualizando", ['sha_present' => true]);
         } else {
             $this->debug_log("Archivo nuevo en GitHub");
         }
@@ -148,7 +206,7 @@ class GitHubBackup {
             $this->debug_log("✅ Backup exitoso", [
                 'filename' => $filename,
                 'github_path' => $github_path,
-                'commit_sha' => $response['commit']['sha'] ?? 'unknown'
+                'commit_sha' => isset($response['commit']['sha']) ? 'present' : 'missing'
             ]);
             return true;
         } else {
@@ -189,7 +247,7 @@ class GitHubBackup {
                 $errors[] = $filename;
             }
             
-            // Pequeña pausa para no saturar la API
+            // Pausa para respetar rate limits de GitHub
             usleep(500000); // 0.5 segundos
         }
         
@@ -198,10 +256,15 @@ class GitHubBackup {
             'files_backed_up' => $backed_up,
             'total_files' => count($files),
             'errors' => $errors,
-            'backup_time' => date('Y-m-d H:i:s')
+            'backup_time' => date('Y-m-d H:i:s'),
+            'config_info' => $this->config_info
         ];
         
-        $this->debug_log("=== BACKUP COMPLETO FINALIZADO ===", $result);
+        $this->debug_log("=== BACKUP COMPLETO FINALIZADO ===", [
+            'files_backed_up' => $backed_up,
+            'total_files' => count($files),
+            'errors_count' => count($errors)
+        ]);
         
         return $result;
     }
@@ -316,10 +379,15 @@ class GitHubBackup {
             'files_restored' => $restored,
             'total_backup_files' => count($backup_files),
             'errors' => $errors,
-            'restore_time' => date('Y-m-d H:i:s')
+            'restore_time' => date('Y-m-d H:i:s'),
+            'config_info' => $this->config_info
         ];
         
-        $this->debug_log("=== RESTAURACIÓN COMPLETA FINALIZADA ===", $result);
+        $this->debug_log("=== RESTAURACIÓN COMPLETA FINALIZADA ===", [
+            'files_restored' => $restored,
+            'total_backup_files' => count($backup_files),
+            'errors_count' => count($errors)
+        ]);
         
         return $result;
     }
@@ -336,7 +404,16 @@ class GitHubBackup {
             'backup_files_count' => $backup_files ? count($backup_files) : 0,
             'github_connection' => $backup_files !== false,
             'last_check' => date('Y-m-d H:i:s'),
-            'sync_status' => 'unknown'
+            'sync_status' => 'unknown',
+            'config_info' => $this->config_info,
+            'security_status' => [
+                'config_source' => $this->config_info['config_source'],
+                'is_secure' => $this->config_info['is_secure'],
+                'token_configured' => $this->config_info['token_present'],
+                'recommendation' => $this->config_info['is_secure'] 
+                    ? 'Configuración segura ✅' 
+                    : 'Usar variables de entorno para mayor seguridad ⚠️'
+            ]
         ];
         
         if ($backup_files !== false) {
@@ -359,47 +436,69 @@ class GitHubBackup {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Content-Type: application/json');
     
-    $action = $_POST['action'] ?? '';
-    $backup = new GitHubBackup();
-    
-    switch ($action) {
-        case 'backup_all':
-            $result = $backup->backup_all_snippets();
-            echo json_encode($result);
-            break;
-            
-        case 'restore_all':
-            $result = $backup->restore_all_from_github();
-            echo json_encode($result);
-            break;
-            
-        case 'status':
-            $result = $backup->get_backup_status();
-            echo json_encode($result);
-            break;
-            
-        case 'list_backups':
-            $result = $backup->list_backup_files();
-            echo json_encode(['success' => true, 'files' => $result]);
-            break;
-            
-        default:
-            echo json_encode(['success' => false, 'error' => 'Acción no válida']);
-            break;
+    try {
+        $action = $_POST['action'] ?? '';
+        $backup = new GitHubBackup();
+        
+        switch ($action) {
+            case 'backup_all':
+                $result = $backup->backup_all_snippets();
+                echo json_encode($result);
+                break;
+                
+            case 'restore_all':
+                $result = $backup->restore_all_from_github();
+                echo json_encode($result);
+                break;
+                
+            case 'status':
+                $result = $backup->get_backup_status();
+                echo json_encode($result);
+                break;
+                
+            case 'list_backups':
+                $result = $backup->list_backup_files();
+                echo json_encode(['success' => true, 'files' => $result]);
+                break;
+                
+            case 'backup_single':
+                $filename = $_POST['filename'] ?? '';
+                if (!empty($filename)) {
+                    $filepath = __DIR__ . '/snippets/' . basename($filename);
+                    $result = $backup->backup_file($filepath, $filename);
+                    echo json_encode(['success' => $result]);
+                } else {
+                    echo json_encode(['success' => false, 'error' => 'Filename required']);
+                }
+                break;
+                
+            default:
+                echo json_encode(['success' => false, 'error' => 'Acción no válida']);
+                break;
+        }
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false, 
+            'error' => $e->getMessage(),
+            'suggestion' => 'Verificar configuración de GitHub en Render'
+        ]);
     }
     exit;
 }
 
-// Si no es POST, mostrar interfaz simple
+// Si no es POST, mostrar interfaz de administración
 ?>
 <!DOCTYPE html>
 <html>
 <head>
-    <title>🔄 GitHub Backup System</title>
+    <title>🔐 GitHub Backup System - Seguro</title>
     <meta charset="utf-8">
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 20px; }
-        .container { max-width: 800px; margin: 0 auto; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 20px; background: #f8fafc; }
+        .container { max-width: 900px; margin: 0 auto; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .security-status { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; }
         .btn { background: #3b82f6; color: white; padding: 10px 20px; border: none; border-radius: 4px; margin: 5px; cursor: pointer; }
         .btn:hover { background: #2563eb; }
         .btn-success { background: #10b981; }
@@ -409,24 +508,89 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .success { background: #d1fae5; border: 1px solid #10b981; }
         .error { background: #fee2e2; border: 1px solid #ef4444; }
         .loading { background: #fef3c7; border: 1px solid #f59e0b; }
+        .config-info { background: #f1f5f9; padding: 15px; border-radius: 6px; font-family: monospace; font-size: 12px; }
+        .secure-badge { background: #10b981; color: white; padding: 4px 8px; border-radius: 12px; font-size: 11px; }
+        .warning-badge { background: #f59e0b; color: white; padding: 4px 8px; border-radius: 12px; font-size: 11px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🔄 Sistema de Backup GitHub</h1>
-        <p>Gestiona backups automáticos de tus snippets en GitHub</p>
+        <div class="card header">
+            <h1>🔐 Sistema de Backup GitHub - Versión Segura</h1>
+            <p>Gestiona backups automáticos con configuración protegida</p>
+        </div>
         
-        <div>
+        <div class="card security-status">
+            <h3>🛡️ Estado de Seguridad</h3>
+            <div id="securityInfo">Cargando información de seguridad...</div>
+        </div>
+        
+        <div class="card">
+            <h3>⚡ Acciones Rápidas</h3>
             <button class="btn btn-warning" onclick="performAction('backup_all')">💾 Backup Completo</button>
             <button class="btn btn-success" onclick="performAction('restore_all')">🔄 Restaurar Todo</button>
             <button class="btn" onclick="performAction('status')">📊 Estado</button>
             <button class="btn" onclick="performAction('list_backups')">📄 Listar Backups</button>
         </div>
         
+        <div class="card">
+            <h3>📋 Configuración del Sistema</h3>
+            <div id="configInfo" class="config-info">
+                Cargando configuración...
+            </div>
+        </div>
+        
         <div id="result"></div>
     </div>
 
     <script>
+    // Cargar información de seguridad al inicializar
+    document.addEventListener('DOMContentLoaded', function() {
+        loadSecurityInfo();
+        performAction('status');
+    });
+    
+    function loadSecurityInfo() {
+        fetch('config-secure.php')
+            .then(response => response.json())
+            .then(data => {
+                const securityDiv = document.getElementById('securityInfo');
+                const configDiv = document.getElementById('configInfo');
+                
+                let securityHtml = '';
+                let badge = data.is_secure ? 
+                    '<span class="secure-badge">✅ SEGURO</span>' : 
+                    '<span class="warning-badge">⚠️ MEJORAR</span>';
+                
+                securityHtml += `<p><strong>Estado:</strong> ${badge}</p>`;
+                securityHtml += `<p><strong>Fuente de configuración:</strong> ${data.config_source}</p>`;
+                
+                if (data.config_source === 'environment') {
+                    securityHtml += '<p>✅ Usando variables de entorno de Render (Recomendado)</p>';
+                } else {
+                    securityHtml += '<p>⚠️ Recomendación: Configurar variables de entorno en Render</p>';
+                }
+                
+                securityDiv.innerHTML = securityHtml;
+                
+                // Mostrar configuración (sin información sensible)
+                let configHtml = `
+                    <strong>Repositorio:</strong> ${data.github_user}/${data.github_repo}<br>
+                    <strong>Rama:</strong> ${data.github_branch}<br>
+                    <strong>Carpeta backup:</strong> ${data.backup_folder}<br>
+                    <strong>Token configurado:</strong> ${data.token_present ? '✅' : '❌'}<br>
+                    <strong>Token (preview):</strong> ${data.token_prefix}<br>
+                    <strong>Método de configuración:</strong> ${data.config_source}
+                `;
+                
+                configDiv.innerHTML = configHtml;
+            })
+            .catch(error => {
+                document.getElementById('securityInfo').innerHTML = 
+                    '<p class="error">❌ Error al cargar información de seguridad</p>';
+            });
+    }
+    
     function performAction(action) {
         const resultDiv = document.getElementById('result');
         resultDiv.innerHTML = '<div class="result loading">⏳ Procesando...</div>';
@@ -441,13 +605,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                resultDiv.innerHTML = `<div class="result success">✅ ${JSON.stringify(data, null, 2)}</div>`;
+                let message = '✅ Acción completada exitosamente!<br><br>';
+                
+                if (action === 'backup_all') {
+                    message += `📦 Archivos respaldados: ${data.files_backed_up}/${data.total_files}<br>`;
+                    message += `🕒 Tiempo: ${data.backup_time}<br>`;
+                    if (data.config_info) {
+                        message += `🔐 Configuración: ${data.config_info.config_source}<br>`;
+                    }
+                    if (data.errors && data.errors.length > 0) {
+                        message += `⚠️ Errores: ${data.errors.join(', ')}<br>`;
+                    }
+                } else if (action === 'restore_all') {
+                    message += `🔄 Archivos restaurados: ${data.files_restored}/${data.total_backup_files}<br>`;
+                    message += `🕒 Tiempo: ${data.restore_time}<br>`;
+                    if (data.errors && data.errors.length > 0) {
+                        message += `⚠️ Errores: ${data.errors.join(', ')}<br>`;
+                    }
+                    message += '<br>🔄 Recargando página en 3 segundos...';
+                    setTimeout(() => location.reload(), 3000);
+                } else if (action === 'status') {
+                    message += `📊 Estado del sistema:<br>`;
+                    message += `• Archivos locales: ${data.local_files_count}<br>`;
+                    message += `• Archivos en backup: ${data.backup_files_count}<br>`;
+                    message += `• Estado de sincronización: ${data.sync_status}<br>`;
+                    message += `• Conexión GitHub: ${data.github_connection ? '✅' : '❌'}<br>`;
+                    if (data.security_status) {
+                        message += `• Seguridad: ${data.security_status.recommendation}<br>`;
+                    }
+                } else if (action === 'list_backups') {
+                    message += `📄 Archivos en backup: ${data.files ? data.files.length : 0}<br>`;
+                    if (data.files && data.files.length > 0) {
+                        message += '<br>Archivos encontrados:<br>';
+                        data.files.slice(0, 5).forEach(file => {
+                            message += `• ${file.name} (${Math.round(file.size/1024)}KB)<br>`;
+                        });
+                        if (data.files.length > 5) {
+                            message += `... y ${data.files.length - 5} más<br>`;
+                        }
+                    }
+                }
+                
+                resultDiv.innerHTML = `<div class="result success">${message}</div>`;
+                
             } else {
-                resultDiv.innerHTML = `<div class="result error">❌ ${data.error || 'Error desconocido'}</div>`;
+                let errorMsg = '❌ Error: ' + (data.error || 'Error desconocido');
+                if (data.suggestion) {
+                    errorMsg += '<br>💡 Sugerencia: ' + data.suggestion;
+                }
+                resultDiv.innerHTML = `<div class="result error">${errorMsg}</div>`;
             }
         })
         .catch(error => {
-            resultDiv.innerHTML = `<div class="result error">❌ Error: ${error.message}</div>`;
+            resultDiv.innerHTML = `<div class="result error">❌ Error de conexión: ${error.message}</div>`;
         });
     }
     </script>
