@@ -1,5 +1,5 @@
 <?php
-// file-viewer.php - Lista de archivos con vista separada Y BACKUP
+// file-viewer.php - Lista de archivos con vista separada Y BACKUP GITHUB
 $view_file = $_GET['file'] ?? null;
 
 // Si se solicita ver un archivo específico, mostrar solo ese archivo
@@ -79,6 +79,7 @@ if ($view_file) {
                 display: inline-block;
                 margin-right: 10px;
                 font-size: 14px;
+                cursor: pointer;
             }
             .btn:hover { background: #2563eb; }
             .btn-back { background: #6b7280; }
@@ -86,6 +87,8 @@ if ($view_file) {
             .btn-success:hover { background: #059669; }
             .btn-warning { background: #f59e0b; }
             .btn-warning:hover { background: #d97706; }
+            .btn-github { background: #6366f1; }
+            .btn-github:hover { background: #4f46e5; }
             .actions {
                 margin-bottom: 20px;
             }
@@ -106,9 +109,9 @@ if ($view_file) {
                 <button class="btn" onclick="copyToClipboard()" id="copyBtn">
                     📋 Copiar código
                 </button>
-                <a href="backup-restore.php?action=backup" class="btn btn-warning">
-                    💾 Backup Ahora
-                </a>
+                <button class="btn btn-github" onclick="backupSingleFile('<?php echo htmlspecialchars($view_file); ?>')">
+                    🔄 Backup a GitHub
+                </button>
             </div>
             
             <div class="file-info">
@@ -135,6 +138,30 @@ if ($view_file) {
                 }, 2000);
             }).catch(function(err) {
                 alert('Error al copiar: ' + err);
+            });
+        }
+        
+        function backupSingleFile(filename) {
+            if (!confirm('¿Hacer backup de este archivo a GitHub?')) return;
+            
+            const formData = new FormData();
+            formData.append('action', 'backup_single');
+            formData.append('filename', filename);
+            
+            fetch('github-backup.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('✅ Backup exitoso a GitHub!');
+                } else {
+                    alert('❌ Error en backup: ' + (data.error || 'Error desconocido'));
+                }
+            })
+            .catch(error => {
+                alert('❌ Error de conexión: ' + error.message);
             });
         }
         
@@ -198,7 +225,7 @@ if ($view_file) {
 <!DOCTYPE html>
 <html>
 <head>
-    <title>📁 Listado de Snippets - Render</title>
+    <title>📁 Listado de Snippets - GitHub Backup</title>
     <meta charset="utf-8">
     <style>
         body { 
@@ -240,25 +267,41 @@ if ($view_file) {
             margin-bottom: 20px;
         }
         
-        /* NUEVA SECCIÓN DE BACKUP */
-        .backup-section {
+        /* NUEVA SECCIÓN DE GITHUB BACKUP */
+        .github-section {
             background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-            border: 2px solid #0ea5e9;
+            border: 2px solid #6366f1;
             padding: 20px;
             border-radius: 8px;
             margin-bottom: 20px;
         }
-        .backup-section h3 {
-            color: #0c4a6e;
+        .github-section h3 {
+            color: #4338ca;
             margin: 0 0 15px 0;
             display: flex;
             align-items: center;
             gap: 10px;
         }
-        .backup-actions {
+        .github-actions {
             display: flex;
             gap: 10px;
             flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-online { background: #10b981; }
+        .status-offline { background: #ef4444; }
+        .status-syncing { background: #f59e0b; animation: pulse 2s infinite; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
         }
         
         .btn {
@@ -272,6 +315,7 @@ if ($view_file) {
             margin-right: 10px;
             font-size: 14px;
             transition: all 0.2s ease;
+            cursor: pointer;
         }
         .btn:hover { 
             background: #2563eb; 
@@ -283,6 +327,8 @@ if ($view_file) {
         .btn-warning:hover { background: #d97706; }
         .btn-danger { background: #ef4444; }
         .btn-danger:hover { background: #dc2626; }
+        .btn-github { background: #6366f1; }
+        .btn-github:hover { background: #4f46e5; }
         
         .file-list {
             background: #f8fafc;
@@ -348,6 +394,27 @@ if ($view_file) {
             padding: 40px;
             color: #64748b;
         }
+        .notification {
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin: 10px 0;
+            display: none;
+        }
+        .notification.success {
+            background: #d1fae5;
+            border: 1px solid #10b981;
+            color: #065f46;
+        }
+        .notification.error {
+            background: #fee2e2;
+            border: 1px solid #ef4444;
+            color: #991b1b;
+        }
+        .notification.loading {
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+            color: #92400e;
+        }
     </style>
 </head>
 <body>
@@ -355,27 +422,36 @@ if ($view_file) {
 <div class="container">
     <div class="header">
         <h1>📁 Listado de Snippets</h1>
-        <p>Archivos PHP generados por Claude - Haz clic en cualquier archivo para ver su código</p>
+        <p>Archivos PHP generados por Claude - Con backup automático en GitHub</p>
         <small>🕒 Actualizado: <?php echo date('Y-m-d H:i:s'); ?></small>
     </div>
 
-    <!-- NUEVA SECCIÓN DE BACKUP -->
-    <div class="backup-section">
-        <h3>💾 Sistema de Backup y Restauración</h3>
-        <p style="margin: 0 0 15px 0; color: #0c4a6e;">Protege tus archivos antes de hacer redeploy en Render</p>
-        <div class="backup-actions">
-            <a href="backup-restore.php?action=backup" class="btn btn-warning" onclick="return confirm('¿Crear backup de todos los archivos actuales?')">
-                💾 Crear Backup Completo
-            </a>
-            <a href="backup-restore.php?action=restore" class="btn btn-success" onclick="return confirm('¿Restaurar archivos desde el backup? Esto sobrescribirá archivos existentes.')">
-                🔄 Restaurar desde Backup
-            </a>
-            <a href="backup-restore.php?action=status" class="btn btn-primary">
+    <!-- NUEVA SECCIÓN DE GITHUB BACKUP -->
+    <div class="github-section">
+        <h3>
+            <span class="status-indicator status-offline" id="githubStatus"></span>
+            🔄 Sistema de Backup GitHub
+        </h3>
+        <p style="margin: 0 0 15px 0; color: #4338ca;">
+            Backup automático activado • Repositorio: pablo-coder07/lumina-snippet-executor
+        </p>
+        <div class="github-actions">
+            <button class="btn btn-github" onclick="performGitHubAction('backup_all')">
+                💾 Backup Completo
+            </button>
+            <button class="btn btn-success" onclick="performGitHubAction('restore_all')">
+                🔄 Restaurar desde GitHub
+            </button>
+            <button class="btn btn-warning" onclick="performGitHubAction('status')">
                 📊 Estado del Backup
-            </a>
+            </button>
+            <button class="btn" onclick="performGitHubAction('list_backups')">
+                📄 Ver Backups
+            </button>
         </div>
-        <small style="color: #0369a1; font-style: italic;">
-            💡 Tip: Haz backup antes de cada redeploy para no perder tus códigos generados
+        <div id="githubResult" class="notification"></div>
+        <small style="color: #6366f1; font-style: italic;">
+            💡 Los archivos se respaldan automáticamente al llegar desde la API de Claude
         </small>
     </div>
 
@@ -386,6 +462,7 @@ if ($view_file) {
         <a href="simple-save-test.php" class="btn">🧪 Test Save</a>
         <a href="?refresh=1" class="btn">🔄 Refresh</a>
         <a href="test-execution.php" class="btn btn-success">🚀 Test Execution</a>
+        <a href="github-backup.php" class="btn btn-github" target="_blank">🔧 GitHub Admin</a>
     </div>
 
     <?php
@@ -404,7 +481,7 @@ if ($view_file) {
         echo '<div class="no-files">
             <h3>📁 No hay archivos PHP en snippets</h3>
             <p>Los archivos aparecerán aquí cuando generes código desde WordPress</p>
-            <p><strong>Si acabas de hacer redeploy:</strong> Usa "🔄 Restaurar desde Backup" para recuperar tus archivos</p>
+            <p><strong>Si acabas de hacer redeploy:</strong> Usa "🔄 Restaurar desde GitHub" para recuperar tus archivos</p>
         </div>';
         exit;
     }
@@ -486,10 +563,87 @@ if ($view_file) {
 </div>
 
 <script>
-// Auto-refresh cada 30 segundos
+// Función para manejar acciones de GitHub
+function performGitHubAction(action) {
+    const resultDiv = document.getElementById('githubResult');
+    const statusIndicator = document.getElementById('githubStatus');
+    
+    // Mostrar estado de carga
+    resultDiv.className = 'notification loading';
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = '⏳ Procesando acción de GitHub: ' + action + '...';
+    statusIndicator.className = 'status-indicator status-syncing';
+    
+    const formData = new FormData();
+    formData.append('action', action);
+    
+    fetch('github-backup.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            resultDiv.className = 'notification success';
+            statusIndicator.className = 'status-indicator status-online';
+            
+            let message = '✅ Acción completada exitosamente!\n\n';
+            
+            if (action === 'backup_all') {
+                message += `📦 Archivos respaldados: ${data.files_backed_up || 0}/${data.total_files || 0}`;
+                if (data.errors && data.errors.length > 0) {
+                    message += `\n⚠️ Errores: ${data.errors.join(', ')}`;
+                }
+            } else if (action === 'restore_all') {
+                message += `🔄 Archivos restaurados: ${data.files_restored || 0}/${data.total_backup_files || 0}`;
+                if (data.errors && data.errors.length > 0) {
+                    message += `\n⚠️ Errores: ${data.errors.join(', ')}`;
+                }
+                // Recargar página después de restauración exitosa
+                setTimeout(() => location.reload(), 2000);
+            } else if (action === 'status') {
+                message += `📊 Estado del sistema:\n`;
+                message += `• Archivos locales: ${data.local_files_count || 0}\n`;
+                message += `• Archivos en backup: ${data.backup_files_count || 0}\n`;
+                message += `• Estado de sincronización: ${data.sync_status || 'unknown'}\n`;
+                message += `• Conexión GitHub: ${data.github_connection ? '✅' : '❌'}`;
+            } else if (action === 'list_backups') {
+                message += `📄 Archivos en backup: ${data.files ? data.files.length : 0}`;
+                if (data.files && data.files.length > 0) {
+                    message += '\n\nArchivos encontrados:\n';
+                    data.files.slice(0, 5).forEach(file => {
+                        message += `• ${file.name} (${Math.round(file.size/1024)}KB)\n`;
+                    });
+                    if (data.files.length > 5) {
+                        message += `... y ${data.files.length - 5} más`;
+                    }
+                }
+            }
+            
+            resultDiv.innerHTML = message.replace(/\n/g, '<br>');
+            
+        } else {
+            resultDiv.className = 'notification error';
+            statusIndicator.className = 'status-indicator status-offline';
+            resultDiv.innerHTML = '❌ Error: ' + (data.error || 'Error desconocido');
+        }
+    })
+    .catch(error => {
+        resultDiv.className = 'notification error';
+        statusIndicator.className = 'status-indicator status-offline';
+        resultDiv.innerHTML = '❌ Error de conexión: ' + error.message;
+    });
+}
+
+// Verificar estado inicial de GitHub al cargar la página
+document.addEventListener('DOMContentLoaded', function() {
+    performGitHubAction('status');
+});
+
+// Auto-refresh cada 60 segundos
 setTimeout(() => {
     location.reload();
-}, 30000);
+}, 60000);
 </script>
 
 </body>
