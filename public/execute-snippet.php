@@ -1,32 +1,29 @@
 <?php
-// execute-snippet.php CORREGIDO - Con CORS explícito para lumina.market
+// execute-snippet.php CORREGIDO FINAL - Sin redeclarar funciones nativas
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 
-// CORS HEADERS ESPECÍFICOS PARA LUMINA.MARKET
+// Limpiar cualquier output previo
+if (ob_get_level()) {
+    ob_end_clean();
+}
+
+// Headers CORS específicos
 header('Access-Control-Allow-Origin: https://lumina.market');
 header('Access-Control-Allow-Methods: POST, OPTIONS, GET');
 header('Access-Control-Allow-Headers: Content-Type, X-API-Key, X-Request-ID, User-Agent');
 header('Access-Control-Allow-Credentials: true');
 header('Content-Type: application/json; charset=utf-8');
 
-// LOG DE DEBUGGING PARA CORS
-error_log("=== REQUEST DEBUG ===");
-error_log("Method: " . $_SERVER['REQUEST_METHOD']);
-error_log("Origin: " . ($_SERVER['HTTP_ORIGIN'] ?? 'not set'));
-error_log("User-Agent: " . ($_SERVER['HTTP_USER_AGENT'] ?? 'not set'));
-error_log("Content-Type: " . ($_SERVER['CONTENT_TYPE'] ?? 'not set'));
-
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    error_log("CORS preflight request handled");
     http_response_code(200);
     exit;
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed', 'method' => $_SERVER['REQUEST_METHOD']]);
+    echo json_encode(['error' => 'Method not allowed']);
     exit;
 }
 
@@ -47,8 +44,6 @@ function send_json_response($data, $status_code = 200) {
     }
     
     http_response_code($status_code);
-    
-    // Headers adicionales para asegurar CORS
     header('Access-Control-Allow-Origin: https://lumina.market');
     header('Content-Type: application/json; charset=utf-8');
     
@@ -69,58 +64,40 @@ function send_json_response($data, $status_code = 200) {
 
 debug_log("=== NUEVA SOLICITUD DE EJECUCIÓN ===");
 
-// Leer input con debugging extendido
+// Leer input
 $raw_input = file_get_contents('php://input');
-debug_log("Raw input received", ['length' => strlen($raw_input)]);
-
 if (empty($raw_input)) {
     debug_log("ERROR: Empty input");
-    send_json_response([
-        'success' => false, 
-        'error' => 'Empty request body',
-        'debug_info' => [
-            'content_length' => $_SERVER['CONTENT_LENGTH'] ?? 'not set',
-            'method' => $_SERVER['REQUEST_METHOD']
-        ]
-    ], 400);
+    send_json_response(['success' => false, 'error' => 'Empty request body'], 400);
 }
 
 $input = json_decode($raw_input, true);
 if (json_last_error() !== JSON_ERROR_NONE) {
-    debug_log("ERROR: JSON decode failed", [
-        'error' => json_last_error_msg(),
-        'raw_preview' => substr($raw_input, 0, 100)
-    ]);
-    send_json_response([
-        'success' => false, 
-        'error' => 'Invalid JSON input: ' . json_last_error_msg(),
-        'raw_preview' => substr($raw_input, 0, 100)
-    ], 400);
+    debug_log("ERROR: JSON decode failed", ['error' => json_last_error_msg()]);
+    send_json_response(['success' => false, 'error' => 'Invalid JSON input'], 400);
 }
 
 $shortcode_name = $input['shortcode'] ?? '';
 if (empty($shortcode_name)) {
     debug_log("ERROR: Shortcode missing");
-    send_json_response([
-        'success' => false, 
-        'error' => 'Shortcode required',
-        'received_fields' => array_keys($input)
-    ], 400);
+    send_json_response(['success' => false, 'error' => 'Shortcode required'], 400);
 }
 
 debug_log("Processing shortcode: " . $shortcode_name);
 
 // ================================================================
-// SISTEMA DE COMUNICACIÓN A DISTANCIA - MOCKS WORDPRESS
+// MOCKS WORDPRESS CORREGIDOS - SIN REDECLARACIONES
 // ================================================================
 
 $GLOBALS['mock_shortcodes'] = [];
 
+// Mock de add_shortcode - registra en global
 function add_shortcode($tag, $callback) {
     debug_log("Mock add_shortcode registrado", ['tag' => $tag]);
     $GLOBALS['mock_shortcodes'][$tag] = $callback;
 }
 
+// Mock de do_shortcode - ejecuta si existe
 function do_shortcode($content) {
     if (preg_match('/\[([^\]]+)\]/', $content, $matches)) {
         $shortcode = $matches[1];
@@ -134,53 +111,64 @@ function do_shortcode($content) {
     return $content;
 }
 
-// Mocks de funciones WordPress esenciales
-function defined($name) {
-    if ($name === 'ABSPATH') return true;
-    return \defined($name);
+// Mock de funciones WordPress SIN REDECLARAR NATIVAS
+if (!function_exists('wp_enqueue_script')) {
+    function wp_enqueue_script() { /* No-op */ }
 }
 
-function wp_enqueue_script() { }
-function wp_enqueue_style() { }
-function wp_localize_script() { }
-function get_option($option, $default = false) { return $default; }
-function is_admin() { return false; }
-function current_user_can($capability) { return true; }
+if (!function_exists('wp_enqueue_style')) {
+    function wp_enqueue_style() { /* No-op */ }
+}
 
-debug_log("Sistema de comunicación a distancia inicializado");
+if (!function_exists('wp_localize_script')) {
+    function wp_localize_script() { /* No-op */ }
+}
+
+if (!function_exists('get_option')) {
+    function get_option($option, $default = false) { 
+        return $default; 
+    }
+}
+
+if (!function_exists('is_admin')) {
+    function is_admin() { 
+        return false; 
+    }
+}
+
+if (!function_exists('current_user_can')) {
+    function current_user_can($capability) { 
+        return true; 
+    }
+}
+
+// SOLUCIÓN PARA defined() - NO redeclarar, usar mock ABSPATH
+if (!defined('ABSPATH')) {
+    define('ABSPATH', '/mock/wordpress/path/');
+}
+
+debug_log("WordPress mocks inicializados correctamente");
 
 // ================================================================
-// BÚSQUEDA DEL CÓDIGO EN RENDER
+// BÚSQUEDA DE ARCHIVO
 // ================================================================
 
 $snippets_dir = __DIR__ . '/snippets/';
-debug_log("Buscando en directorio remoto", ['path' => $snippets_dir]);
-
 if (!is_dir($snippets_dir)) {
-    debug_log("ERROR CRÍTICO: Directorio snippets no existe en Render");
-    send_json_response([
-        'success' => false, 
-        'error' => 'Remote snippets directory not found',
-        'expected_path' => $snippets_dir,
-        'current_dir' => __DIR__
-    ], 500);
+    debug_log("ERROR: Snippets directory missing");
+    send_json_response(['success' => false, 'error' => 'Snippets directory not found'], 500);
 }
 
-// Buscar archivo específico del shortcode
 $snippet_file = null;
 $latest_timestamp = 0;
 $candidates = [];
 $files = scandir($snippets_dir);
 
-debug_log("Archivos encontrados en Render", ['total_files' => count($files)]);
-
 foreach ($files as $file) {
     if (pathinfo($file, PATHINFO_EXTENSION) === 'php') {
-        // Patrones de búsqueda para archivos de shortcode
         $patterns = [
-            '/^' . preg_quote($shortcode_name, '/') . '_(\d+)\.php$/',           // shortcode_timestamp.php
-            '/^' . preg_quote($shortcode_name, '/') . '_v\d+_(\d+)\.php$/',     // shortcode_v1_timestamp.php
-            '/^' . preg_quote($shortcode_name, '/') . '-(\d+)\.php$/'           // shortcode-timestamp.php
+            '/^' . preg_quote($shortcode_name, '/') . '_(\d+)\.php$/',
+            '/^' . preg_quote($shortcode_name, '/') . '_v\d+_(\d+)\.php$/'
         ];
         
         foreach ($patterns as $pattern) {
@@ -207,15 +195,7 @@ foreach ($files as $file) {
 }
 
 if (!$snippet_file || !file_exists($snippet_file)) {
-    debug_log("ERROR: Código no encontrado en Render", [
-        'shortcode' => $shortcode_name,
-        'candidates_found' => count($candidates),
-        'searched_patterns' => [
-            $shortcode_name . '_TIMESTAMP.php',
-            $shortcode_name . '_vN_TIMESTAMP.php',
-            $shortcode_name . '-TIMESTAMP.php'
-        ]
-    ]);
+    debug_log("ERROR: Snippet file not found");
     
     $php_files = array_filter($files, function($f) {
         return pathinfo($f, PATHINFO_EXTENSION) === 'php';
@@ -223,62 +203,55 @@ if (!$snippet_file || !file_exists($snippet_file)) {
     
     send_json_response([
         'success' => false,
-        'error' => 'Remote code not found for shortcode',
+        'error' => 'Snippet not found',
         'shortcode' => $shortcode_name,
         'candidates_found' => $candidates,
-        'available_php_files' => array_values($php_files),
-        'search_location' => $snippets_dir
+        'available_files' => array_values($php_files)
     ], 404);
 }
 
-debug_log("Ejecutando código remoto", [
-    'file' => basename($snippet_file),
-    'size' => filesize($snippet_file) . ' bytes'
-]);
+debug_log("Ejecutando archivo", ['file' => basename($snippet_file), 'size' => filesize($snippet_file)]);
 
 // ================================================================
-// EJECUCIÓN REMOTA DEL CÓDIGO
+// EJECUCIÓN SEGURA CON MOCKS
 // ================================================================
 
 $start_time = microtime(true);
 
 try {
-    // Limpiar buffers
+    // Limpiar buffers de salida
     while (ob_get_level()) {
         ob_end_clean();
     }
     ob_start();
     
-    // PASO CRÍTICO: Incluir y ejecutar el código PHP desde Render
+    // Incluir el archivo PHP
     include $snippet_file;
     
     // Ejecutar shortcode si fue registrado
     $shortcode_executed = false;
-    $execution_output = '';
-    
     if (isset($GLOBALS['mock_shortcodes'][$shortcode_name])) {
-        debug_log("Ejecutando shortcode remoto: " . $shortcode_name);
+        debug_log("Ejecutando shortcode: " . $shortcode_name);
         
         $callback = $GLOBALS['mock_shortcodes'][$shortcode_name];
         if (is_callable($callback)) {
-            ob_clean(); // Limpiar output anterior
+            ob_clean(); // Limpiar output del include
             $execution_output = call_user_func($callback);
             echo $execution_output;
             $shortcode_executed = true;
-            debug_log("Shortcode remoto ejecutado exitosamente");
         }
     }
     
     $output = ob_get_clean();
     $execution_time = round((microtime(true) - $start_time) * 1000, 2);
     
-    debug_log("Ejecución remota completada", [
+    debug_log("Ejecución completada", [
         'output_length' => strlen($output),
         'execution_time' => $execution_time . 'ms',
         'shortcode_executed' => $shortcode_executed
     ]);
     
-    // Procesar resultado para envío a WordPress
+    // Procesar output
     $html = trim($output);
     $css = '';
     $js = '';
@@ -295,7 +268,7 @@ try {
         $html = preg_replace('/<script[^>]*>.*?<\/script>/is', '', $html);
     }
     
-    // Limpiar y validar strings para JSON
+    // Limpiar y validar para JSON
     $html = trim($html);
     $css = trim($css);
     $js = trim($js);
@@ -311,7 +284,7 @@ try {
         $js = mb_convert_encoding($js, 'UTF-8', 'auto');
     }
     
-    // RESPUESTA EXITOSA DE COMUNICACIÓN REMOTA
+    // Respuesta exitosa
     $response = [
         'success' => true,
         'html' => $html,
@@ -321,63 +294,55 @@ try {
         'file_used' => basename($snippet_file),
         'shortcode_executed' => $shortcode_executed,
         'remote_execution' => true,
-        'render_location' => $snippets_dir,
         'timestamp' => time(),
-        'communication_status' => 'successful'
+        'mock_shortcodes_registered' => array_keys($GLOBALS['mock_shortcodes']),
+        'debug_info' => [
+            'file_size' => filesize($snippet_file),
+            'candidates_found' => count($candidates)
+        ]
     ];
     
-    debug_log("Enviando respuesta exitosa a WordPress", [
+    debug_log("Enviando respuesta exitosa", [
         'html_length' => strlen($html),
         'css_length' => strlen($css),
-        'js_length' => strlen($js),
-        'communication' => 'success'
+        'js_length' => strlen($js)
     ]);
     
     send_json_response($response);
     
 } catch (ParseError $e) {
     ob_end_clean();
-    debug_log("Error de sintaxis en código remoto", [
-        'error' => $e->getMessage(), 
-        'line' => $e->getLine(),
-        'file' => basename($snippet_file)
-    ]);
+    debug_log("Parse error", ['error' => $e->getMessage(), 'line' => $e->getLine()]);
     
     send_json_response([
         'success' => false,
-        'error' => 'Remote code parse error: ' . $e->getMessage(),
+        'error' => 'Parse Error: ' . $e->getMessage(),
         'error_type' => 'parse_error',
         'line' => $e->getLine(),
-        'file_used' => basename($snippet_file),
-        'communication_status' => 'failed'
+        'file_used' => basename($snippet_file)
     ], 500);
     
 } catch (Error $e) {
     ob_end_clean();
-    debug_log("Error fatal en código remoto", [
-        'error' => $e->getMessage(), 
-        'line' => $e->getLine()
-    ]);
+    debug_log("Fatal error", ['error' => $e->getMessage(), 'line' => $e->getLine()]);
     
     send_json_response([
         'success' => false,
-        'error' => 'Remote code fatal error: ' . $e->getMessage(),
+        'error' => 'Fatal Error: ' . $e->getMessage(),
         'error_type' => 'fatal_error',
         'line' => $e->getLine(),
-        'file_used' => basename($snippet_file),
-        'communication_status' => 'failed'
+        'file_used' => basename($snippet_file)
     ], 500);
     
 } catch (Exception $e) {
     ob_end_clean();
-    debug_log("Excepción en ejecución remota", ['error' => $e->getMessage()]);
+    debug_log("Exception", ['error' => $e->getMessage()]);
     
     send_json_response([
         'success' => false,
-        'error' => 'Remote execution exception: ' . $e->getMessage(),
+        'error' => 'Exception: ' . $e->getMessage(),
         'error_type' => 'exception',
-        'file_used' => basename($snippet_file),
-        'communication_status' => 'failed'
+        'file_used' => basename($snippet_file)
     ], 500);
 }
 ?>
