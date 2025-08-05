@@ -539,4 +539,42 @@ try {
         'file_used' => basename($snippet_file)
     ], 500);
 }
+
+// Debugging adicional para output vacío
+if ($shortcode_executed && empty($html) && empty($css) && empty($js)) {
+    debug_log("🔍 DEBUG OUTPUT VACÍO", [
+        'shortcode_name' => $shortcode_name,
+        'file_used' => basename($snippet_file),
+        'raw_output' => $output,
+        'raw_output_length' => strlen($output),
+        'callback_exists' => isset($GLOBALS['mock_shortcodes'][$shortcode_name]),
+        'callback_callable' => isset($GLOBALS['mock_shortcodes'][$shortcode_name]) ? is_callable($GLOBALS['mock_shortcodes'][$shortcode_name]) : false
+    ]);
+    
+    // Intentar ejecutar nuevamente con más debugging
+    if (isset($GLOBALS['mock_shortcodes'][$shortcode_name])) {
+        $callback = $GLOBALS['mock_shortcodes'][$shortcode_name];
+        debug_log("Reintentando ejecución con debugging", [
+            'callback_type' => gettype($callback),
+            'callback_string' => is_string($callback) ? $callback : 'not_string'
+        ]);
+        
+        ob_start();
+        try {
+            $debug_output = call_user_func($callback);
+            debug_log("Callback ejecutado - output directo", [
+                'output_type' => gettype($debug_output),
+                'output_length' => strlen($debug_output),
+                'output_preview' => substr($debug_output, 0, 100)
+            ]);
+        } catch (Exception $e) {
+            debug_log("Error en callback", ['error' => $e->getMessage()]);
+        }
+        $buffer_content = ob_get_clean();
+        debug_log("Buffer content después de callback", [
+            'buffer_length' => strlen($buffer_content),
+            'buffer_content' => $buffer_content
+        ]);
+    }
+}
 ?>
