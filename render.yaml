@@ -19,6 +19,32 @@ services:
         value: "300"
       - key: ENVIRONMENT
         value: "production"
+      - key: NODE_ENV
+        value: "production"
+      - key: SHEET_ID
+        value: "1Sik4rqd1u7c8heQ6aA-TmNXw1UUiIOIOpSdqZC9OGrE"
+      - key: SHEET_NAME
+        value: "Sheet1"
+      - key: GOOGLE_TYPE
+        value: "service_account"
+      - key: GOOGLE_PROJECT_ID
+        value: "TU_GOOGLE_PROJECT_ID"
+      - key: GOOGLE_PRIVATE_KEY_ID
+        value: "TU_GOOGLE_PRIVATE_KEY_ID"
+      - key: GOOGLE_PRIVATE_KEY
+        value: "TU_GOOGLE_PRIVATE_KEY"
+      - key: GOOGLE_CLIENT_EMAIL
+        value: "TU_GOOGLE_CLIENT_EMAIL"
+      - key: GOOGLE_CLIENT_ID
+        value: "TU_GOOGLE_CLIENT_ID"
+      - key: GOOGLE_AUTH_URI
+        value: "https://accounts.google.com/o/oauth2/auth"
+      - key: GOOGLE_TOKEN_URI
+        value: "https://oauth2.googleapis.com/token"
+      - key: GOOGLE_AUTH_PROVIDER_X509_CERT_URL
+        value: "https://www.googleapis.com/oauth2/v1/certs"
+      - key: GOOGLE_CLIENT_X509_CERT_URL
+        value: "TU_GOOGLE_CLIENT_X509_CERT_URL"
     healthCheckPath: "/health.php"
     autoDeploy: true
     disk:
