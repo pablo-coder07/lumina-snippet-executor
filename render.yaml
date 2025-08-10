@@ -3,7 +3,7 @@ services:
   - type: web
     name: lumina-snippet-executor
     env: docker
-    repo: https://github.com/TU_USUARIO/lumina-snippet-executor
+    repo: https://github.com/pablo-coder07/lumina-snippet-executor
     branch: main
     dockerfilePath: ./Dockerfile
     plan: starter # o el plan que hayas elegido
@@ -45,9 +45,5 @@ services:
         value: "https://www.googleapis.com/oauth2/v1/certs"
       - key: GOOGLE_CLIENT_X509_CERT_URL
         value: "TU_GOOGLE_CLIENT_X509_CERT_URL"
-    healthCheckPath: "/health.php"
+    healthCheckPath: "/health"
     autoDeploy: true
-    disk:
-      name: snippets-storage
-      mountPath: /var/www/html/snippets
-      sizeGB: 1
