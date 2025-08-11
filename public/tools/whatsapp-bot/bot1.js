@@ -25,7 +25,7 @@ const client = new Client({
     }),
     puppeteer: {
         headless: true,
-        timeout: 60000, // 🕐 Aumentar timeout a 60 segundos
+        timeout: 60000,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -42,7 +42,13 @@ const client = new Client({
             '--disable-renderer-backgrounding',
             '--disable-features=TranslateUI',
             '--disable-ipc-flooding-protection',
-            '--force-color-profile=srgb'
+            '--force-color-profile=srgb',
+            // Optimizaciones de memoria
+            '--memory-pressure-off',
+            '--max_old_space_size=256',
+            '--disable-background-networking',
+            '--disable-background-media',
+            '--disable-features=VizDisplayCompositor'
         ]
     }
     // Removemos webVersionCache que puede causar problemas
