@@ -59,7 +59,12 @@ const RUTA_IMAGENES = path.join(__dirname, 'imagenes');
 
 client.on('qr', (qr) => {
     console.log('🎯 ¡QR GENERADO! Escanea este código QR con WhatsApp:');
-    qrcode.generate(qr, { small: true });
+    console.log(''); // Línea en blanco
+    qrcode.generate(qr, { small: true, width: 40 });
+    console.log(''); // Línea en blanco
+    console.log('📱 Si el QR no se ve bien, también puedes usar este texto en otro generador:');
+    console.log(qr);
+    console.log('');
 });
 
 client.on('ready', () => {
