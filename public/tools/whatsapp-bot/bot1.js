@@ -69,6 +69,8 @@ client.on('qr', (qr) => {
 
 client.on('ready', () => {
     console.log(`✅ Cliente de WhatsApp está listo! Esperando mensajes...`);
+    console.log(`🕐 Hora actual: ${new Date().toISOString()}`);
+    console.log(`📊 RENDER-LOG: WhatsApp Bot conectado exitosamente`);
     iniciarVerificadorHorarios();
 });
 

@@ -68,5 +68,15 @@ RUN mkdir -p /var/www/html/tools/whatsapp-bot/whatsapp_sessions && \
 # Exponer puerto
 EXPOSE 80
 
-# Iniciar Apache
-CMD ["apache2-foreground"]
+# Crear script de inicio que ejecute bot + Apache
+RUN echo '#!/bin/bash\n\
+cd /var/www/html/tools/whatsapp-bot\n\
+echo "🚀 Iniciando WhatsApp Bot en background..."\n\
+nohup node bot1.js > /var/log/whatsapp-bot.log 2>&1 &\n\
+echo "📋 Bot iniciado, logs en /var/log/whatsapp-bot.log"\n\
+echo "🌐 Iniciando Apache..."\n\
+exec apache2-foreground' > /start-services.sh && \
+chmod +x /start-services.sh
+
+# Iniciar bot + Apache automáticamente
+CMD ["/start-services.sh"]
