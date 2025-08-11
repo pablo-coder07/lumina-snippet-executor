@@ -76,14 +76,17 @@ client.on('ready', () => {
 
 client.on('loading_screen', (percent, message) => {
     console.log(`⏳ Cargando: ${percent}% - ${message}`);
+    console.log(`📊 RENDER-LOG: Loading progress: ${percent}%`);
 });
 
 client.on('authenticated', () => {
     console.log('🔐 Cliente autenticado exitosamente');
+    console.log(`📊 RENDER-LOG: Authentication successful`);
 });
 
 client.on('auth_failure', msg => {
     console.error('❌ Error de autenticación:', msg);
+    console.error(`📊 RENDER-LOG: Authentication failed: ${msg}`);
     console.log('🧹 Limpiando sesiones corruptas...');
     try {
         const { execSync } = require('child_process');
@@ -91,15 +94,29 @@ client.on('auth_failure', msg => {
         console.log('✅ Sesiones limpiadas. Reinicia el bot.');
     } catch (error) {
         console.error('❌ Error al limpiar sesiones:', error.message);
+        console.error(`📊 RENDER-LOG: Session cleanup failed: ${error.message}`);
     }
     process.exit(1);
 });
 
 client.on('disconnected', (reason) => {
     console.log('🚨 Cliente desconectado:', reason);
+    console.log(`📊 RENDER-LOG: Client disconnected: ${reason}`);
     console.log('ℹ️ Reinicia el bot manualmente: node bot1.js');
     process.exit(0);
 });
+
+// Agregar manejo de errores generales
+client.on('error', (error) => {
+    console.error('❌ Error general del cliente:', error);
+    console.error(`📊 RENDER-LOG: Client error: ${error.message}`);
+});
+
+// Agregar timeout para detectar si se queda colgado
+setTimeout(() => {
+    console.log('⏰ TIMEOUT: Han pasado 2 minutos desde el inicio');
+    console.log('📊 RENDER-LOG: Bot timeout - may be stuck');
+}, 120000);
 
 client.on('message', async message => {
     const mensajeId = message.id._serialized;
@@ -343,7 +360,17 @@ process.on('SIGINT', () => {
 });
 
 console.log('🚀 Iniciando WhatsApp Bot...');
-client.initialize();
+console.log('📊 RENDER-LOG: Starting WhatsApp bot initialization');
+
+// Logging mejorado para inicialización
+client.initialize()
+    .then(() => {
+        console.log('📊 RENDER-LOG: Bot initialization started successfully');
+    })
+    .catch((error) => {
+        console.error('❌ Error al inicializar el bot:', error);
+        console.error(`📊 RENDER-LOG: Bot initialization failed: ${error.message}`);
+    });
 
 // -----------------------------------
 // 🧠 INICIO: PROCESADOR CON SHEETS
