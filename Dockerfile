@@ -17,8 +17,8 @@ WORKDIR /var/www/html
 # Copiar archivos PHP
 COPY public/ /var/www/html/
 
-# Copiar .htaccess si existe
-COPY .htaccess /var/www/html/.htaccess 2>/dev/null || :
+# Copiar .htaccess
+COPY .htaccess /var/www/html/.htaccess
 
 # Crear directorio de snippets
 RUN mkdir -p /var/www/html/snippets && \
