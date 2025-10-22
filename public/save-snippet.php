@@ -31,6 +31,19 @@ function debug_log($message, $data = null) {
     error_log($log_entry);
 }
 
+// Función para generar código aleatorio con letras minúsculas
+function generate_random_code($length = 8) {
+    $characters = 'abcdefghijklmnopqrstuvwxyz';
+    $code = '';
+    $max = strlen($characters) - 1;
+
+    for ($i = 0; $i < $length; $i++) {
+        $code .= $characters[random_int(0, $max)];
+    }
+
+    return $code;
+}
+
 debug_log("=== NUEVA SOLICITUD DE GUARDADO ===");
 
 // Verificar API key
@@ -183,8 +196,22 @@ if (!is_writable($snippets_dir)) {
     exit;
 }
 
-// Generar nombre de archivo único
-$filename = $shortcode . '_' . $timestamp . '.php';
+// Generar nombre de archivo único con código aleatorio de letras
+// Si timestamp es numérico (timestamp tradicional), reemplazar por código aleatorio
+if (is_numeric($timestamp) && $timestamp > 1000000000) {
+    // Es un timestamp numérico tradicional, usar código aleatorio
+    $random_code = generate_random_code(8);
+    debug_log("Using random letter code instead of timestamp", [
+        'original_timestamp' => $timestamp,
+        'random_code' => $random_code
+    ]);
+} else {
+    // Ya viene con código de letras, respetarlo
+    $random_code = $timestamp;
+    debug_log("Timestamp already contains letter code", ['code' => $random_code]);
+}
+
+$filename = $shortcode . '_' . $random_code . '.php';
 $filepath = $snippets_dir . $filename;
 
 debug_log("Preparing file", [
@@ -199,12 +226,13 @@ if (!str_starts_with(trim($code), '<?php')) {
 }
 
 // Agregar metadatos
+$actual_timestamp = is_numeric($timestamp) && $timestamp > 1000000000 ? $timestamp : time();
 $metadata_comment = "<?php\n";
 $metadata_comment .= "/*\n";
 $metadata_comment .= " * Código generado por DrawCode AI\n";
 $metadata_comment .= " * Shortcode: [{$shortcode}]\n";
-$metadata_comment .= " * Fecha: " . date('Y-m-d H:i:s', $timestamp) . "\n";
-$metadata_comment .= " * Timestamp: {$timestamp}\n";
+$metadata_comment .= " * Fecha: " . date('Y-m-d H:i:s', $actual_timestamp) . "\n";
+$metadata_comment .= " * ID Único: {$random_code}\n";
 $metadata_comment .= " * User ID: {$user_id}\n";
 $metadata_comment .= " */\n\n";
 
