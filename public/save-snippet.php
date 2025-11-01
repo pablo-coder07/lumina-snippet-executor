@@ -196,23 +196,27 @@ if (!is_writable($snippets_dir)) {
     exit;
 }
 
-// Generar nombre de archivo único con código aleatorio de letras
-// Si timestamp es numérico (timestamp tradicional), reemplazar por código aleatorio
-if (is_numeric($timestamp) && $timestamp > 1000000000) {
-    // Es un timestamp numérico tradicional, usar código aleatorio
-    $random_code = generate_random_code(8);
-    debug_log("Using random letter code instead of timestamp", [
-        'original_timestamp' => $timestamp,
-        'random_code' => $random_code
-    ]);
-} else {
-    // Ya viene con código de letras, respetarlo
-    $random_code = $timestamp;
-    debug_log("Timestamp already contains letter code", ['code' => $random_code]);
-}
+// 🆕 CAMBIO CLAVE: El shortcode YA incluye la versión y código aleatorio
+// No agregar código adicional - usar el nombre exacto que viene de WordPress
+// Formato esperado: base_v1_codigo (ej: hola_mundo_simple_v1_eztenncy)
 
-$filename = $shortcode . '_' . $random_code . '.php';
+debug_log("Using shortcode name as-is (no additional code)", [
+    'shortcode' => $shortcode,
+    'includes_version' => preg_match('/_v\d+_[a-z]{8}$/', $shortcode) ? 'YES' : 'NO'
+]);
+
+// El nombre del archivo es exactamente el shortcode + .php
+$filename = $shortcode . '.php';
 $filepath = $snippets_dir . $filename;
+
+// Extraer código aleatorio del shortcode para los metadatos
+$random_code = '';
+if (preg_match('/_([a-z]{8})$/', $shortcode, $matches)) {
+    $random_code = $matches[1];
+} else {
+    // Fallback si no tiene código (no debería pasar)
+    $random_code = generate_random_code(8);
+}
 
 debug_log("Preparing file", [
     'filename' => $filename,
