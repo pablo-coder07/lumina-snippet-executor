@@ -202,7 +202,7 @@ if (!is_writable($snippets_dir)) {
 
 debug_log("Using shortcode name as-is (no additional code)", [
     'shortcode' => $shortcode,
-    'includes_version' => preg_match('/_v\d+_[a-z]{8}$/', $shortcode) ? 'YES' : 'NO'
+    'includes_version' => preg_match('/_v\d+_[a-z]{8,16}$/', $shortcode) ? 'YES' : 'NO'
 ]);
 
 // El nombre del archivo es exactamente el shortcode + .php
@@ -210,12 +210,13 @@ $filename = $shortcode . '.php';
 $filepath = $snippets_dir . $filename;
 
 // Extraer código aleatorio del shortcode para los metadatos
+// 🆕 ACTUALIZADO: Soportar códigos de 8-16 caracteres
 $random_code = '';
-if (preg_match('/_([a-z]{8})$/', $shortcode, $matches)) {
+if (preg_match('/_([a-z]{8,16})$/', $shortcode, $matches)) {
     $random_code = $matches[1];
 } else {
     // Fallback si no tiene código (no debería pasar)
-    $random_code = generate_random_code(8);
+    $random_code = generate_random_code(16);
 }
 
 debug_log("Preparing file", [
