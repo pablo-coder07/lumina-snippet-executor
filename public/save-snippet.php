@@ -373,3 +373,4 @@ debug_log("Returning success response", [
 
 echo json_encode($response);
 ?>
+// Force redeploy Sun Nov  2 14:35:48 -05 2025
